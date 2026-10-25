@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST_DIR = path.join(ROOT_DIR, "dist");
 
-const REQUIRED_FILES = ["index.html", "src/styles/main.css", "src/js/app.js", "assets/preview.svg"];
+const REQUIRED_FILES = [
+  "index.html",
+  "herotower.PNG",
+  "src/styles/main.css",
+  "src/js/app.js",
+  "assets/preview.svg",
+];
 
 for (const relativePath of REQUIRED_FILES) {
   const fullPath = path.join(ROOT_DIR, relativePath);
@@ -31,6 +37,7 @@ for (const match of indexHtml.matchAll(localAssetPattern)) {
 fs.rmSync(DIST_DIR, { recursive: true, force: true });
 fs.mkdirSync(DIST_DIR, { recursive: true });
 fs.copyFileSync(path.join(ROOT_DIR, "index.html"), path.join(DIST_DIR, "index.html"));
+fs.copyFileSync(path.join(ROOT_DIR, "herotower.PNG"), path.join(DIST_DIR, "herotower.PNG"));
 fs.cpSync(path.join(ROOT_DIR, "src"), path.join(DIST_DIR, "src"), { recursive: true });
 fs.cpSync(path.join(ROOT_DIR, "assets"), path.join(DIST_DIR, "assets"), { recursive: true });
 

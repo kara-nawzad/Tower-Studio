@@ -196,6 +196,7 @@ const st = {
   drawerOpen: true,
   masterStep: 1,
   selectedId: null,
+  heroOpen: true,
   onboarding: {
     active: true,
     towerSelected: false,
@@ -8089,8 +8090,190 @@ function updatePowerSimulation(now, dt) {
   }
 }
 
+const heroMotion = {
+  targetX: 0,
+  targetY: 0,
+  currentX: 0,
+  currentY: 0,
+  targetRx: 0,
+  targetRy: 0,
+  currentRx: 0,
+  currentRy: 0,
+  maxShiftX: 34,
+  maxShiftY: 24,
+  maxTiltX: 1.8,
+  maxTiltY: 2.2,
+  activeHotspot: null,
+};
+
+function applyHeroTransform() {
+  const hero = $("#hero-tab");
+  if (!hero) return;
+  hero.style.setProperty("--hero-px", `${heroMotion.currentX.toFixed(2)}px`);
+  hero.style.setProperty("--hero-py", `${heroMotion.currentY.toFixed(2)}px`);
+  hero.style.setProperty("--hero-rx", `${heroMotion.currentRx.toFixed(3)}deg`);
+  hero.style.setProperty("--hero-ry", `${heroMotion.currentRy.toFixed(3)}deg`);
+}
+
+function resetHeroPointer(immediate = false) {
+  heroMotion.targetX = 0;
+  heroMotion.targetY = 0;
+  heroMotion.targetRx = 0;
+  heroMotion.targetRy = 0;
+  if (immediate || reducedMotionQuery.matches) {
+    heroMotion.currentX = 0;
+    heroMotion.currentY = 0;
+    heroMotion.currentRx = 0;
+    heroMotion.currentRy = 0;
+    applyHeroTransform();
+  }
+}
+
+function updateHeroPointer(clientX, clientY, immediate = false) {
+  if (!st.heroOpen || window.innerWidth <= 760) return;
+  const w = Math.max(1, window.innerWidth);
+  const h = Math.max(1, window.innerHeight);
+  const nx = clamp((clientX / w - 0.5) * 2, -1, 1);
+  const ny = clamp((clientY / h - 0.5) * 2, -1, 1);
+  // Inverse 3D motion: mouse right -> image moves left; mouse up -> image moves down.
+  heroMotion.targetX = -nx * heroMotion.maxShiftX;
+  heroMotion.targetY = -ny * heroMotion.maxShiftY;
+  heroMotion.targetRy = -nx * heroMotion.maxTiltY;
+  heroMotion.targetRx = ny * heroMotion.maxTiltX;
+  if (immediate || reducedMotionQuery.matches) {
+    heroMotion.currentX = heroMotion.targetX;
+    heroMotion.currentY = heroMotion.targetY;
+    heroMotion.currentRx = heroMotion.targetRx;
+    heroMotion.currentRy = heroMotion.targetRy;
+    applyHeroTransform();
+  }
+}
+
+function updateHeroMotion(dt = 0.016) {
+  if (!st.heroOpen || window.innerWidth <= 760) return;
+  if (reducedMotionQuery.matches) {
+    heroMotion.currentX = heroMotion.targetX;
+    heroMotion.currentY = heroMotion.targetY;
+    heroMotion.currentRx = heroMotion.targetRx;
+    heroMotion.currentRy = heroMotion.targetRy;
+    applyHeroTransform();
+    return;
+  }
+  const ease = 1 - Math.pow(0.0018, dt);
+  heroMotion.currentX += (heroMotion.targetX - heroMotion.currentX) * ease;
+  heroMotion.currentY += (heroMotion.targetY - heroMotion.currentY) * ease;
+  heroMotion.currentRx += (heroMotion.targetRx - heroMotion.currentRx) * ease;
+  heroMotion.currentRy += (heroMotion.targetRy - heroMotion.currentRy) * ease;
+  applyHeroTransform();
+}
+
+function setHeroOpen(open) {
+  st.heroOpen = Boolean(open);
+  document.body.classList.toggle("hero-active", st.heroOpen);
+  const hero = $("#hero-tab");
+  if (hero) {
+    hero.classList.toggle("is-hidden", !st.heroOpen);
+    hero.setAttribute("aria-hidden", String(!st.heroOpen));
+    if (!st.heroOpen) {
+      hero
+        .querySelectorAll(".hero-hotspot.is-open")
+        .forEach((el) => el.classList.remove("is-open"));
+      heroMotion.activeHotspot = null;
+    }
+  }
+  const toggleBtn = $("#hero-toggle");
+  if (toggleBtn) toggleBtn.setAttribute("aria-pressed", String(st.heroOpen));
+  resetHeroPointer(true);
+  if (!st.heroOpen) {
+    renderer.render(scene, camera);
+    syncHUDScroll();
+  }
+}
+
+function initHeroTab() {
+  const hero = $("#hero-tab");
+  const enterBtn = $("#hero-enter-btn");
+  const toggleBtn = $("#hero-toggle");
+  const breeze = $("#hero-breeze");
+  if (!hero) return;
+
+  if (breeze && !breeze.children.length) {
+    const motes = [
+      [10, 62, 4, 19, -2],
+      [16, 74, 3, 22, -9],
+      [24, 52, 4, 17, -5],
+      [31, 68, 3, 21, -13],
+      [37, 46, 5, 24, -4],
+      [43, 58, 3, 18, -11],
+      [48, 39, 4, 20, -7],
+      [55, 44, 3, 23, -15],
+      [68, 50, 4, 19, -6],
+      [75, 62, 3, 21, -12],
+      [81, 54, 4, 17, -3],
+      [86, 72, 3, 25, -16],
+      [20, 86, 4, 20, -8],
+      [78, 84, 3, 22, -14],
+    ];
+    breeze.innerHTML = motes
+      .map(
+        ([x, y, size, dur, delay]) =>
+          `<span class="hero-mote" style="--mote-x:${x}%;--mote-y:${y}%;--mote-size:${size}px;--mote-dur:${dur}s;--mote-delay:${delay}s"></span>`
+      )
+      .join("");
+  }
+
+  enterBtn?.addEventListener("click", () => setHeroOpen(false));
+  toggleBtn?.addEventListener("click", () => setHeroOpen(!st.heroOpen));
+
+  hero.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "touch") return;
+    updateHeroPointer(event.clientX, event.clientY);
+  });
+  hero.addEventListener("pointerleave", () => resetHeroPointer(false));
+
+  hero.querySelectorAll(".hero-hotspot").forEach((spot) => {
+    const key = spot.dataset.hotspot || null;
+    spot.addEventListener("pointerenter", () => {
+      heroMotion.activeHotspot = key;
+    });
+    spot.addEventListener("pointerleave", () => {
+      if (heroMotion.activeHotspot === key && !spot.classList.contains("is-open")) {
+        heroMotion.activeHotspot = null;
+      }
+    });
+    spot.addEventListener("focus", () => {
+      heroMotion.activeHotspot = key;
+    });
+    spot.addEventListener("blur", () => {
+      if (heroMotion.activeHotspot === key) heroMotion.activeHotspot = null;
+    });
+    spot.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const willOpen = !spot.classList.contains("is-open");
+      hero
+        .querySelectorAll(".hero-hotspot.is-open")
+        .forEach((other) => other.classList.remove("is-open"));
+      spot.classList.toggle("is-open", willOpen);
+      heroMotion.activeHotspot = willOpen ? key : null;
+    });
+  });
+
+  hero.addEventListener("click", (event) => {
+    if (event.target.closest(".hero-hotspot") || event.target.closest(".hero-brand-card")) return;
+    hero.querySelectorAll(".hero-hotspot.is-open").forEach((el) => el.classList.remove("is-open"));
+    heroMotion.activeHotspot = null;
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && st.heroOpen) setHeroOpen(false);
+  });
+
+  setHeroOpen(st.heroOpen);
+}
+
 function enterMasterStep(step) {
   if (![1, 2, 3, 4, 5].includes(step)) return;
+  if (st.heroOpen) setHeroOpen(false);
   if (step > 1) st.onboarding.active = false;
   const previousStep = st.masterStep;
   if (step !== 4) stopMicrowaveAudio();
@@ -8932,6 +9115,11 @@ function updateSelectionTag() {
 const clock = new T.Clock();
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  if (st.heroOpen) {
+    updateHeroMotion(dt);
+    requestAnimationFrame(animate);
+    return;
+  }
   const now = performance.now();
   updatePowerSimulation(now, dt);
   updateMicrowaveVisuals(now);
@@ -8989,6 +9177,11 @@ window.TowerStudio = {
   applySmartProfile,
   getPowerPositions,
   syncHUDScroll,
+  heroMotion,
+  setHeroOpen,
+  updateHeroPointer,
+  resetHeroPointer,
+  updateHeroMotion,
   aauModel,
   calculateSweep,
   sectorBeamGeometry,
@@ -9041,5 +9234,6 @@ syncAIArchitect();
 rebuildSite();
 syncHUDScroll();
 fitSite(true);
+initHeroTab();
 animate();
 $("#loading").classList.add("hidden");
