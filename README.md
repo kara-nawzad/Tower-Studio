@@ -10,11 +10,11 @@ An interactive 3D telecom tower, power plant, 19-inch equipment cabinet, microwa
 ## Live Demo & Preview
 
 - **Live Application:** [http://karanawzad.tech/Tower-Studio/](http://karanawzad.tech/Tower-Studio/)
-- **Interactive Demo Placeholder:** *(Add a screen-recording GIF or walkthrough video link here when ready)*
+- **Interactive Demo Placeholder:** _(Add a screen-recording GIF or walkthrough video link here when ready)_
 
 ![Tower Studio Preview](./assets/preview.svg)
 
-> *Tip: Replace `./assets/preview.svg` with a full-resolution viewport screenshot (for example `./assets/screenshot.png`) anytime you want to showcase a custom site build.*
+> _Tip: Replace `./assets/preview.svg` with a full-resolution viewport screenshot (for example `./assets/screenshot.png`) anytime you want to showcase a custom site build._
 
 ---
 
@@ -22,17 +22,17 @@ An interactive 3D telecom tower, power plant, 19-inch equipment cabinet, microwa
 
 Tower Studio turns complex telecommunications site engineering into an interactive, plain-English 3D learning and simulation studio:
 
-- **3D Civil & Tower Engine (Step 01 · Site):** Choose between 4 site environments (*Mountain Peak*, *Urban Rooftop*, *Rural Greenfield*, and *Emergency Disaster COW*) and 7 engineered tower structures (3-leg tubular lattice, 4-leg angular lattice, rooftop RTT/DRAME on dunnage, parapet pole, light monopole, guyed mast, and telescopic COW truck). Includes live structural twist checks, perimeter security fencing, 70 mm² copper bonding, inspection earth pits, and lightning protection.
+- **3D Civil & Tower Engine (Step 01 · Site):** Choose between 4 site environments (_Mountain Peak_, _Urban Rooftop_, _Rural Greenfield_, and _Emergency Disaster COW_) and 7 engineered tower structures (3-leg tubular lattice, 4-leg angular lattice, rooftop RTT/DRAME on dunnage, parapet pole, light monopole, guyed mast, and telescopic COW truck). Includes live structural twist checks, perimeter security fencing, 70 mm² copper bonding, inspection earth pits, and lightning protection.
 - **Multi-Vendor 19-Inch Cabinet & Alarm Highway (Step 02 · Open cabinet):** Inspect indoor and IP55 outdoor enclosures for **Ericsson**, **Huawei**, and **Nokia**. Swing open the 3D cabinet door, click individual rack cards (radios, baseband, power shelf, router, TDM, microwave modem), patch the animated yellow Router-to-TDM E1 cable, and trace external alarms from the surge box to the Network Operations Center (NOC).
 - **AC/DC Power Plant & Blackout Simulator (Step 03 · Power):** Models the complete telecom power chain—commercial utility grid, single or dual alternating diesel generators, Automatic Transfer Switch (ATS), Main Distribution Board (MDB), −48 V DC bus, N+1 3 kW rectifier shelves, VRLA/Lithium battery banks, bulk fuel tank, and dual-split air conditioning. Trigger **Simulate Power Blackout** to watch 0.000 ms battery holdover, generator cranking, and 15-second ATS load transfer.
 - **Microwave Backhaul & 2G–5G Cellular RF Workbench (Step 04 · Aim & Connect):**
-  - *Microwave Backhaul:* Configure 1+0 Standalone, 1+1 Hot Standby, 1+1 Space Diversity, 2+0 XPIC, or 4+0 XPIC links across 0.3–2.4 m dishes and 7–38 GHz bands. Rotate azimuth from 0–360° or use **Auto-Peak** with a live virtual multimeter, received signal level (RSL), and fade-margin readout.
-  - *Cellular Sectors & Virtual Site Master:* Manage three 120° sectors (Alpha, Beta, Gamma) across **2G, 3G, 4G LTE, 5G NR, and Mixed-Mode** profiles with azimuth, electrical RET downtilt, TX power, and bandwidth controls. Run 601-point VSWR / Distance-to-Fault cable sweeps to compare healthy feeders against simulated waterlogged connectors at 21.3 m.
+  - _Microwave Backhaul:_ Configure 1+0 Standalone, 1+1 Hot Standby, 1+1 Space Diversity, 2+0 XPIC, or 4+0 XPIC links across 0.3–2.4 m dishes and 7–38 GHz bands. Rotate azimuth from 0–360° or use **Auto-Peak** with a live virtual multimeter, received signal level (RSL), and fade-margin readout.
+  - _Cellular Sectors & Virtual Site Master:_ Manage three 120° sectors (Alpha, Beta, Gamma) across **2G, 3G, 4G LTE, 5G NR, and Mixed-Mode** profiles with azimuth, electrical RET downtilt, TX power, and bandwidth controls. Run 601-point VSWR / Distance-to-Fault cable sweeps to compare healthy feeders against simulated waterlogged connectors at 21.3 m.
 - **Multi-Vendor CLI & Carrier Acceptance Audit (Step 05 · Go on air):** Open a docked console supporting **Ericsson Moshell / Router IPOS**, **Huawei BBU5900 MML**, and **Nokia AirScale CLI** commands backed by live 3D site state. Verify all 6 carrier acceptance gates before launching the animated **Go On Air** sequence and frequency-lock audio chime.
 - **100% Local Offline AI Suite (Zero API Keys):**
-  - *AI Architect Command Bar:* Type natural-language prompts (e.g., *"Safeen 4G mountain relay using 1+1 microwave and grid"*) or pick one of three preset blueprints (*Zagros Mountain 5G Relay*, *Urban Rooftop 4G/5G C-RAN*, *Emergency Border Outpost COW*) for a 3-second staged 3D build.
-  - *AI Waveform Diagnostic:* Local rule-based classifier that inspects 601-point RF sweeps and explains healthy traces vs. capacitive water-ingress discontinuities.
-  - *AI NOC Copilot:* Run `ai diagnose` (or click **AI Copilot**) in the terminal to correlate active alarms, power autonomy, and RF faults with three guided one-click remediation actions.
+  - _AI Architect Command Bar:_ Type natural-language prompts (e.g., _"Safeen 4G mountain relay using 1+1 microwave and grid"_) or pick one of three preset blueprints (_Zagros Mountain 5G Relay_, _Urban Rooftop 4G/5G C-RAN_, _Emergency Border Outpost COW_) for a 3-second staged 3D build.
+  - _AI Waveform Diagnostic:_ Local rule-based classifier that inspects 601-point RF sweeps and explains healthy traces vs. capacitive water-ingress discontinuities.
+  - _AI NOC Copilot:_ Run `ai diagnose` (or click **AI Copilot**) in the terminal to correlate active alarms, power autonomy, and RF faults with three guided one-click remediation actions.
 
 ---
 
@@ -41,7 +41,7 @@ Tower Studio turns complex telecommunications site engineering into an interacti
 - **Frontend Markup & Layout:** Semantic HTML5, responsive CSS3 custom properties (desktop docked drawer + mobile touch-target layout with `prefers-reduced-motion` support)
 - **3D Engine & Graphics:** [Three.js r128](https://threejs.org/) (orthographic CAD camera, procedural 3D meshes, raycast object picking) + inline dynamic SVG charts
 - **Application Logic:** Vanilla ES6+ JavaScript (build-free execution, deterministic engineering & offline AI engines)
-- **Audio & Typography:** Browser Web Audio API (procedural alignment tones & launch chime), Google Fonts (*Barlow*, *Barlow Condensed*, *Space Mono*)
+- **Audio & Typography:** Browser Web Audio API (procedural alignment tones & launch chime), Google Fonts (_Barlow_, _Barlow Condensed_, _Space Mono_)
 - **Developer Tooling & CI:** Node.js (≥ 20), built-in `node:test` suite, ESLint, Prettier, EditorConfig, and GitHub Actions
 
 ---
@@ -85,7 +85,9 @@ Tower-Studio/
 ├── eslint.config.mjs              # ESLint flat configuration
 ├── index.html                     # Root application entry point (GitHub Pages ready)
 ├── LICENSE                        # MIT License
-└── package.json                   # Project metadata and npm scripts
+├── package-lock.json              # Locked dependency versions for reproducible CI
+├── package.json                   # Project metadata and npm scripts
+└── README.md                      # Project overview, setup, and usage guide
 ```
 
 ---
@@ -107,7 +109,7 @@ Tower Studio has **zero build requirement** to run in a browser, and includes st
      ```bash
      python3 -m http.server 3000
      ```
-   - Visit `http://localhost:3000` in your browser. *(An internet connection is required on first load so the browser can fetch Three.js r128 and Google Fonts from their CDNs.)*
+   - Visit `http://localhost:3000` in your browser. _(An internet connection is required on first load so the browser can fetch Three.js r128 and Google Fonts from their CDNs.)_
 
 ### Option B: Developer Setup (Node.js ≥ 20)
 
@@ -145,10 +147,10 @@ The Tower Studio web application runs **100% client-side in the browser**. All A
 
 For the local Node.js development server (`scripts/dev-server.mjs`), optional settings can be configured in a `.env` file (see [`.env.example`](./.env.example)):
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `HOST` | `0.0.0.0` | Network interface the local development server binds to |
-| `PORT` | `3000` | TCP port for `npm run dev` / `npm start` |
+| Variable   | Default       | Description                                               |
+| ---------- | ------------- | --------------------------------------------------------- |
+| `HOST`     | `0.0.0.0`     | Network interface the local development server binds to   |
+| `PORT`     | `3000`        | TCP port for `npm run dev` / `npm start`                  |
 | `NODE_ENV` | `development` | Runtime environment label (`development` or `production`) |
 
 ---
@@ -160,8 +162,8 @@ For the local Node.js development server (`scripts/dev-server.mjs`), optional se
    - **Scroll** (or pinch on touchscreens) to zoom in and out, or click **FIT SITE** in the top bar to re-center.
    - **Click** any 3D object—tower legs, earth pits, generator, cabinet door, rack cards, microwave dishes, or cellular antennas—to inspect what it is, what it does, and why the site needs it.
 2. **Follow the 5 Master Steps (Bottom Navigation Bar):**
-   - **Step 01 · Site:** Pick an environment (such as *Mountain Peak* or *Urban Rooftop*) and adjust tower type, height, grounding, and lightning protection under the **Configure** tab.
-   - **Step 02 · Open cabinet:** Select a vendor (*Ericsson*, *Huawei*, or *Nokia*), swing open the cabinet door, toggle rack modules, test the yellow Router-to-TDM cable patch, or trace the external alarm path.
+   - **Step 01 · Site:** Pick an environment (such as _Mountain Peak_ or _Urban Rooftop_) and adjust tower type, height, grounding, and lightning protection under the **Configure** tab.
+   - **Step 02 · Open cabinet:** Select a vendor (_Ericsson_, _Huawei_, or _Nokia_), swing open the cabinet door, toggle rack modules, test the yellow Router-to-TDM cable patch, or trace the external alarm path.
    - **Step 03 · Power:** Configure commercial grid vs. dual generators, battery strings, and rectifier count, or click **Simulate Power Blackout** to observe backup failover in real time.
    - **Step 04 · Aim & Connect:** Switch between **Microwave Backhaul** (click **Auto-Peak** to lock the dish alignment) and **Cellular Sectors** (adjust sector azimuth/tilt or run a **Virtual Site Master** cable sweep).
    - **Step 05 · Go on air:** Check the 6-gate Carrier Acceptance checklist. Once all six checks show green `✓`, click **GO ON AIR**—or click **TERMINAL** to run vendor CLI commands (`lt all`, `cabx`, `LST ALM:;`, `show bts status`, `ai diagnose`).

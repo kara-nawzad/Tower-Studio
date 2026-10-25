@@ -4,7 +4,7 @@ Briefly describe what this Pull Request changes and why.
 
 ## Related Issue
 
-Closes #(issue-number) *(or write `N/A` if none)*
+Closes #(issue-number) _(or write `N/A` if none)_
 
 ## Type of Change
 

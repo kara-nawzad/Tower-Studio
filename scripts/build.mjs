@@ -6,12 +6,7 @@ import { fileURLToPath } from "node:url";
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST_DIR = path.join(ROOT_DIR, "dist");
 
-const REQUIRED_FILES = [
-  "index.html",
-  "src/styles/main.css",
-  "src/js/app.js",
-  "assets/preview.svg",
-];
+const REQUIRED_FILES = ["index.html", "src/styles/main.css", "src/js/app.js", "assets/preview.svg"];
 
 for (const relativePath of REQUIRED_FILES) {
   const fullPath = path.join(ROOT_DIR, relativePath);
