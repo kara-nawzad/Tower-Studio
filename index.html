@@ -13,7 +13,98 @@
     />
     <link rel="stylesheet" href="./src/styles/main.css" />
   </head>
-  <body>
+  <body class="hero-active">
+    <section class="hero-tab" id="hero-tab" aria-label="Telecom Tower Installation Simulator hero">
+      <div class="hero-stage" id="hero-stage">
+        <div class="hero-artwork" id="hero-artwork">
+          <img
+            class="hero-image"
+            src="./herotower.PNG"
+            alt="Isometric 3D hilltop telecom site with lattice tower, equipment shelter, standby diesel generator, and field maintenance pickup truck"
+            draggable="false"
+          />
+          <div class="hero-sunlight" aria-hidden="true"></div>
+          <div class="hero-sky-drift" aria-hidden="true"></div>
+          <div class="hero-lake-shimmer" aria-hidden="true"></div>
+          <div class="hero-beacon-pulse" aria-hidden="true"></div>
+          <div class="hero-breeze" id="hero-breeze" aria-hidden="true"></div>
+
+          <button
+            type="button"
+            class="hero-hotspot hotspot-tower"
+            data-hotspot="tower"
+            aria-label="Inspect Telecom Lattice Tower"
+          >
+            <span class="hero-pin" style="left: 52%; top: 40%" aria-hidden="true"><i></i></span>
+            <span class="hero-note note-left" role="tooltip">
+              <small>STRUCTURE · 4-LEG LATTICE</small>
+              <strong>Telecom Tower</strong>
+              <span>3-sector cellular array, dual microwave dishes &amp; aviation beacon.</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="hero-hotspot hotspot-shelter"
+            data-hotspot="shelter"
+            aria-label="Inspect Equipment Shelter and HVAC"
+          >
+            <span class="hero-pin" style="left: 42%; top: 48%" aria-hidden="true"><i></i></span>
+            <span class="hero-note note-top" role="tooltip">
+              <small>CORE ENCLOSURE · HVAC</small>
+              <strong>Equipment Shelter</strong>
+              <span>19&Prime; multi-vendor racks, &minus;48V DC power plant &amp; split A/C.</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="hero-hotspot hotspot-generator"
+            data-hotspot="generator"
+            aria-label="Inspect Standby Diesel Generator"
+          >
+            <span class="hero-pin" style="left: 43%; top: 45%" aria-hidden="true"><i></i></span>
+            <span class="hero-note note-top-left" role="tooltip">
+              <small>BACKUP POWER · DIESEL</small>
+              <strong>Generator</strong>
+              <span>Standby diesel genset with automatic ATS mains failover.</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="hero-hotspot hotspot-maintenance"
+            data-hotspot="maintenance"
+            aria-label="Inspect Field Maintenance Crew"
+          >
+            <span class="hero-pin" style="left: 46%; top: 47%" aria-hidden="true"><i></i></span>
+            <span class="hero-note note-top-right" role="tooltip">
+              <small>FIELD OPERATIONS · CREW</small>
+              <strong>Site Maintenance</strong>
+              <span>Field service pickup for rigging, climbs &amp; RF sweep checks.</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="hero-brand-card" id="hero-brand-card">
+        <div class="hero-logo-row">
+          <div class="brand-mark hero-brand-mark">TS</div>
+          <span class="hero-logo-wordmark">TOWER <b>STUDIO</b></span>
+        </div>
+        <h2 class="hero-headline">
+          <span class="hero-headline-line">TELECOM TOWER</span>
+          <span class="hero-headline-line accent">INSTALLATION SIMULATOR</span>
+        </h2>
+        <div class="hero-cta-row">
+          <button type="button" class="hero-enter-btn" id="hero-enter-btn">
+            <span>Enter 3D Simulator</span>
+            <span class="hero-enter-arrow" aria-hidden="true">&rarr;</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <canvas
       id="scene"
       aria-label="Interactive three-dimensional telecom site and 19-inch equipment cabinet. Drag to orbit, scroll to zoom, and select equipment to inspect it."
@@ -33,6 +124,14 @@
           <button class="icon-button" id="zoom-out" aria-label="Zoom out">−</button>
           <button class="icon-button" id="zoom-in" aria-label="Zoom in">+</button>
         </div>
+        <button
+          class="icon-button hero-toggle"
+          id="hero-toggle"
+          type="button"
+          aria-label="Open Hero overview tab"
+        >
+          HERO
+        </button>
         <button
           class="icon-button terminal-toggle"
           id="terminal-toggle"

@@ -410,3 +410,66 @@ test("application executes full Phases 01–07 simulation, RF sweep classifier, 
 
   dom.window.close();
 });
+
+test("hero tab opens first with left logo/title, living nature layers, inverse 3D parallax, and 4 equipment hotspots", () => {
+  const { dom, document, studio } = createHeadlessStudio({ width: 1440, height: 900 });
+
+  const hero = document.getElementById("hero-tab");
+  assert.ok(hero, "Hero tab section should exist");
+  assert.equal(studio.state.heroOpen, true, "Hero tab should open first on initial load");
+  assert.equal(document.body.classList.contains("hero-active"), true);
+  assert.equal(hero.classList.contains("is-hidden"), false);
+
+  // Image & compact left branding lockup (cleaned of extra subtitle/paragraph/hint copy)
+  const heroImg = hero.querySelector(".hero-image");
+  assert.equal(heroImg.getAttribute("src"), "./herotower.PNG");
+  const brandCard = document.getElementById("hero-brand-card");
+  const lines = [...brandCard.querySelectorAll(".hero-headline-line")].map((el) =>
+    el.textContent.trim()
+  );
+  assert.deepEqual(lines, ["TELECOM TOWER", "INSTALLATION SIMULATOR"]);
+  assert.equal(brandCard.querySelector(".hero-brand-mark").textContent.trim(), "TS");
+  assert.doesNotMatch(brandCard.textContent, /INTERACTIVE 3D ENGINEERING SUITE/);
+  assert.doesNotMatch(brandCard.textContent, /Configure towers, multi-vendor/i);
+  assert.doesNotMatch(brandCard.textContent, /Move cursor for 3D depth/i);
+
+  // Living nature layers
+  assert.ok(hero.querySelector(".hero-sunlight"));
+  assert.ok(hero.querySelector(".hero-sky-drift"));
+  assert.ok(hero.querySelector(".hero-lake-shimmer"));
+  assert.ok(hero.querySelector(".hero-beacon-pulse"));
+  assert.equal(hero.querySelectorAll(".hero-mote").length, 14);
+
+  // Inverse 3D mouse parallax: right -> left (-X), left -> right (+X), up -> down (+Y), down -> up (-Y)
+  studio.updateHeroPointer(1300, 450, true);
+  assert.ok(studio.heroMotion.currentX < -20, "Mouse right should shift hero artwork left (-X)");
+  studio.updateHeroPointer(140, 450, true);
+  assert.ok(studio.heroMotion.currentX > 20, "Mouse left should shift hero artwork right (+X)");
+  studio.updateHeroPointer(720, 100, true);
+  assert.ok(studio.heroMotion.currentY > 12, "Mouse up should shift hero artwork down (+Y)");
+  studio.updateHeroPointer(720, 800, true);
+  assert.ok(studio.heroMotion.currentY < -12, "Mouse down should shift hero artwork up (-Y)");
+
+  // 4 equipment hotspots with pulsing pins & callout boxes
+  const hotspots = [...hero.querySelectorAll(".hero-hotspot")].map((el) => el.dataset.hotspot);
+  assert.deepEqual(hotspots, ["tower", "shelter", "generator", "maintenance"]);
+  assert.equal(hero.querySelectorAll(".hero-pin").length, 4);
+  assert.equal(hero.querySelectorAll(".hero-note").length, 4);
+
+  const genSpot = hero.querySelector('[data-hotspot="generator"]');
+  genSpot.click();
+  assert.equal(genSpot.classList.contains("is-open"), true);
+  assert.equal(studio.heroMotion.activeHotspot, "generator");
+
+  // Enter simulator & re-open Hero tab via topbar HERO button
+  document.getElementById("hero-enter-btn").click();
+  assert.equal(studio.state.heroOpen, false);
+  assert.equal(document.body.classList.contains("hero-active"), false);
+  assert.equal(hero.classList.contains("is-hidden"), true);
+
+  document.getElementById("hero-toggle").click();
+  assert.equal(studio.state.heroOpen, true);
+  assert.equal(document.body.classList.contains("hero-active"), true);
+
+  dom.window.close();
+});
