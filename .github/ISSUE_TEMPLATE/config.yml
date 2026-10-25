@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Technical Engineering Reference
+    url: https://github.com/kara-nawzad/Tower-Studio/blob/main/docs/technical-reference.md
+    about: Review existing Phase 01–07 models, CLI commands, and formulas before opening an issue.
