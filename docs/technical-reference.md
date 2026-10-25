@@ -1,6 +1,6 @@
 # TOWER STUDIO
 
-Open **`TowerStudio.html`** in a modern browser. The application is a build-free, single-page Three.js workbench; Three.js r128 and the editorial fonts load from CDNs. All Phase 7 AI parsing, inference, and triage is local and offline, with no external AI dependency or API key.
+Open **`index.html`** in a modern browser (or serve the repository root over HTTP). The application is a build-free Three.js workbench structured with `index.html`, `src/styles/main.css`, and `src/js/app.js`; Three.js r128 and the editorial fonts load from CDNs. All Phase 7 AI parsing, inference, and triage is local and offline, with no external AI dependency or API key.
 
 ## Phase 01 — Civil, environment & towers
 

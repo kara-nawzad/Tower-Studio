@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="preview-title preview-desc">
+  <title id="preview-title">Tower Studio — 3D Telecom Site Engineering Workbench</title>
+  <desc id="preview-desc">Blueprint schematic preview of Tower Studio showing the five-step telecom site workflow, 3D lattice tower, 19-inch cabinet, power plant, microwave link, and cellular RF telemetry.</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#CBD5E1" />
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="#FBFBF9" />
+  <rect width="1200" height="630" fill="url(#grid)" />
+  <rect x="24" y="24" width="1152" height="582" fill="none" stroke="#0F172A" stroke-width="2" />
+
+  <!-- Top Header Bar -->
+  <rect x="48" y="48" width="1104" height="64" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+  <rect x="64" y="62" width="36" height="36" fill="#0F172A" />
+  <text x="82" y="86" text-anchor="middle" font-family="monospace" font-weight="700" font-size="16" fill="#FACC15">TS</text>
+  <text x="116" y="75" font-family="sans-serif" font-weight="700" font-size="11" letter-spacing="1.5" fill="#64748B">TOWER STUDIO WORKBENCH / PHASE 01–07</text>
+  <text x="116" y="97" font-family="sans-serif" font-weight="800" font-size="22" letter-spacing="1" fill="#0F172A">TOWER STUDIO</text>
+
+  <rect x="926" y="64" width="208" height="32" rx="16" fill="#ECFDF5" stroke="#10B981" stroke-width="1.5" />
+  <circle cx="946" cy="80" r="5" fill="#10B981" />
+  <text x="960" y="84" font-family="monospace" font-weight="700" font-size="11" fill="#065F46">ON AIR · OPERATIONAL</text>
+
+  <!-- Left Engineering Drawer Preview -->
+  <rect x="48" y="132" width="380" height="394" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+  <rect x="48" y="132" width="380" height="58" fill="#0F172A" />
+  <text x="68" y="156" font-family="monospace" font-size="11" fill="#FACC15">LIVE ENGINEERING TELEMETRY</text>
+  <text x="68" y="177" font-family="sans-serif" font-weight="700" font-size="17" fill="#FFFFFF">Civil · Cabinet · Power · RF · CLI</text>
+
+  <g font-family="monospace" font-size="12" fill="#0F172A">
+    <rect x="68" y="210" width="340" height="44" fill="#F8FAFC" stroke="#CBD5E1" />
+    <text x="82" y="229" fill="#64748B" font-size="10">01 · CIVIL &amp; GROUNDING</text>
+    <text x="82" y="245" font-weight="700">45 m Tubular Lattice · 2.1 Ω PASS</text>
+
+    <rect x="68" y="264" width="340" height="44" fill="#F8FAFC" stroke="#CBD5E1" />
+    <text x="82" y="283" fill="#64748B" font-size="10">02 · MULTI-VENDOR CABINET</text>
+    <text x="82" y="299" font-weight="700">Ericsson / Huawei / Nokia 19&quot; Rack</text>
+
+    <rect x="68" y="318" width="340" height="44" fill="#F8FAFC" stroke="#CBD5E1" />
+    <text x="82" y="337" fill="#64748B" font-size="10">03 · -48V DC POWER &amp; N+1</text>
+    <text x="82" y="353" font-weight="700">ATS + Dual Genset + VRLA/LiFePO4</text>
+
+    <rect x="68" y="372" width="340" height="44" fill="#F8FAFC" stroke="#CBD5E1" />
+    <text x="82" y="391" fill="#64748B" font-size="10">04 · MICROWAVE &amp; 5G SECTORS</text>
+    <text x="82" y="407" font-weight="700">2+0 XPIC Locked · VSWR 1.14 PASS</text>
+
+    <rect x="68" y="426" width="340" height="44" fill="#ECFDF5" stroke="#10B981" />
+    <text x="82" y="445" fill="#065F46" font-size="10">05 · CLI &amp; OFFLINE AI COPILOT</text>
+    <text x="82" y="461" font-weight="700" fill="#065F46">6/6 Carrier Gates Verified · Zero Keys</text>
+  </g>
+  <text x="68" y="504" font-family="monospace" font-size="10" fill="#64748B">SCREENSHOT PLACEHOLDER · LIVE THREE.JS VIEWPORT</text>
+
+  <!-- Right 3D Viewport Schematic Illustration -->
+  <rect x="452" y="132" width="700" height="394" fill="#FFFFFF" fill-opacity="0.72" stroke="#CBD5E1" stroke-width="1.5" />
+
+  <!-- Ground Pad -->
+  <polygon points="620,470 802,430 984,470 802,510" fill="#E2E8F0" stroke="#0F172A" stroke-width="2" />
+
+  <!-- RF Sector Cones -->
+  <polygon points="802,216 610,165 610,255" fill="#10B981" fill-opacity="0.14" stroke="#10B981" stroke-dasharray="4 4" />
+  <polygon points="802,216 995,165 995,255" fill="#2563EB" fill-opacity="0.12" stroke="#2563EB" stroke-dasharray="4 4" />
+
+  <!-- Microwave Link Vector -->
+  <line x1="824" y1="256" x2="1115" y2="256" stroke="#FACC15" stroke-width="4" />
+  <line x1="824" y1="256" x2="1115" y2="256" stroke="#F97316" stroke-width="1.5" stroke-dasharray="8 6" />
+  <text x="970" y="244" text-anchor="middle" font-family="monospace" font-weight="700" font-size="11" fill="#B45309">MW LINK LOCKED · -48.0 dBm</text>
+
+  <!-- Lattice Tower -->
+  <g stroke="#0F172A" stroke-width="2.2" fill="none">
+    <line x1="762" y1="470" x2="790" y2="188" />
+    <line x1="842" y1="470" x2="814" y2="188" />
+    <line x1="802" y1="482" x2="802" y2="164" stroke-width="1.6" />
+    <line x1="767" y1="420" x2="837" y2="420" />
+    <line x1="772" y1="365" x2="832" y2="365" />
+    <line x1="778" y1="310" x2="826" y2="310" />
+    <line x1="783" y1="255" x2="821" y2="255" />
+    <line x1="788" y1="205" x2="816" y2="205" />
+    <polyline points="762,470 837,420 772,365 826,310 783,255 816,205" stroke-width="1.4" />
+    <polyline points="842,470 767,420 832,365 778,310 821,255 788,205" stroke-width="1.4" />
+  </g>
+
+  <!-- Aviation Beacon -->
+  <circle cx="802" cy="160" r="6" fill="#DC2626" />
+  <circle cx="802" cy="160" r="13" fill="#DC2626" fill-opacity="0.2" />
+
+  <!-- Sector AAUs & Microwave Dish -->
+  <rect x="774" y="196" width="10" height="36" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+  <rect x="820" y="196" width="10" height="36" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+  <circle cx="824" cy="256" r="13" fill="#FFFFFF" stroke="#0F172A" stroke-width="2.2" />
+
+  <!-- Cabinet & Generator on Pad -->
+  <rect x="700" y="420" width="38" height="52" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+  <rect x="862" y="432" width="56" height="40" fill="#FACC15" stroke="#0F172A" stroke-width="2" />
+
+  <!-- Bottom 5-Step Master Navigator -->
+  <g font-family="monospace" font-size="11" font-weight="700">
+    <rect x="250" y="544" width="136" height="42" fill="#0F172A" stroke="#0F172A" stroke-width="2" />
+    <text x="318" y="569" text-anchor="middle" fill="#FACC15">01 · SITE</text>
+
+    <rect x="394" y="544" width="136" height="42" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+    <text x="462" y="569" text-anchor="middle" fill="#0F172A">02 · CABINET</text>
+
+    <rect x="538" y="544" width="136" height="42" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+    <text x="606" y="569" text-anchor="middle" fill="#0F172A">03 · POWER</text>
+
+    <rect x="682" y="544" width="136" height="42" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+    <text x="750" y="569" text-anchor="middle" fill="#0F172A">04 · AIM &amp; RF</text>
+
+    <rect x="826" y="544" width="136" height="42" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+    <text x="894" y="569" text-anchor="middle" fill="#0F172A">05 · ON AIR</text>
+  </g>
+</svg>
