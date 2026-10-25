@@ -1,6 +1,6 @@
 # TOWER STUDIO
 
-Open **`TowerStudio.html`** in a modern browser. The application is a build-free, single-page Three.js workbench; Three.js r128 and the editorial fonts load from CDNs. All Phase 7 AI parsing, inference, and triage is local and offline, with no external AI dependency or API key.
+Open **`index.html`** in a modern browser (or serve the repository root over HTTP). The application is a build-free Three.js workbench structured with `index.html`, `src/styles/main.css`, and `src/js/app.js`; Three.js r128 and the editorial fonts load from CDNs. All Phase 7 AI parsing, inference, and triage is local and offline, with no external AI dependency or API key.
 
 ## Phase 01 — Civil, environment & towers
 
@@ -9,12 +9,12 @@ Open **`TowerStudio.html`** in a modern browser. The application is a build-free
 - Raised C30/37 plinths, anchor cages, double-nut leveling, lattice bracing, ladders, monopole flanges, rooftop I-beam dunnage, guy anchors, and COW outriggers.
 - Chain-link security fencing, barbed-wire outriggers, 70 mm² copper bonding, a bonded access gate, inspection earth pits, and lightning-protection volumes.
 
-| Environment | Allowed structures | Height limits |
-| --- | --- | --- |
-| Mountain Peak | 3-leg tubular lattice; 4-leg angular lattice | 30–60 m |
-| Urban Rooftop | RTT/DRAME on dunnage; parapet pole | 3–15 m; 3–6 m |
-| Rural Greenfield | Angular lattice; tubular lattice; light monopole; guyed mast | 30–60 m; 18–30 m; 40–80 m |
-| Emergency Disaster | Telescopic COW truck | 15–25 m |
+| Environment        | Allowed structures                                           | Height limits             |
+| ------------------ | ------------------------------------------------------------ | ------------------------- |
+| Mountain Peak      | 3-leg tubular lattice; 4-leg angular lattice                 | 30–60 m                   |
+| Urban Rooftop      | RTT/DRAME on dunnage; parapet pole                           | 3–15 m; 3–6 m             |
+| Rural Greenfield   | Angular lattice; tubular lattice; light monopole; guyed mast | 30–60 m; 18–30 m; 40–80 m |
+| Emergency Disaster | Telescopic COW truck                                         | 15–25 m                   |
 
 Mountain sites force **Active ESE** lightning protection, **four Cadweld earth pits**, and fence/ground bonding.
 
@@ -90,11 +90,11 @@ The fixed five-step navigator keeps all cabinet work inside **Step 02 · Open ca
 
 ### Vendor housings
 
-| Ecosystem | Indoor | Outdoor / exposed rooftop |
-| --- | --- | --- |
-| Ericsson | RBS 6201 · 1800 × 600 × 400 mm, four shelves, mesh door | RBS 6102 · IP55 double-door enclosure |
-| Huawei | BTS3900 modular cabinet | BTS3900A · IP55 |
-| Nokia | AirScale 3U subrack in a 19-inch integration rack | AirScale IP55 outdoor rack |
+| Ecosystem | Indoor                                                  | Outdoor / exposed rooftop             |
+| --------- | ------------------------------------------------------- | ------------------------------------- |
+| Ericsson  | RBS 6201 · 1800 × 600 × 400 mm, four shelves, mesh door | RBS 6102 · IP55 double-door enclosure |
+| Huawei    | BTS3900 modular cabinet                                 | BTS3900A · IP55                       |
+| Nokia     | AirScale 3U subrack in a 19-inch integration rack       | AirScale IP55 outdoor rack            |
 
 An urban rooftop without a shelter always normalizes to an **outdoor IP55** housing. The Indoor control is disabled and application-side state guards reject an invalid indoor selection.
 
@@ -144,13 +144,13 @@ Transmission remains inside the fixed five-step shell under **Step 04 · Aim & C
 
 The baseline full-duplex backhaul capacity is 1 Gbps before the selected topology multiplier.
 
-| Topology | Procedural arrangement | Capacity | Topology loss |
-| --- | --- | ---: | ---: |
-| 1+0 Standalone | One dish and one ODU | 1× | 0 dB |
-| 1+1 HSB | One dish, two ODUs, asymmetrical T-junction | 1× | Main −1.5 dB; standby −7.0 dB |
-| 1+1 Space Diversity | Two vertically separated dishes, 3–6 m apart | 1× | 0 dB |
-| 2+0 XPIC | One dual-polar dish, two ODUs/modems and OMT | 2× | 0 dB |
-| 4+0 XPIC | One dual-polar dish, four ODUs/modems and two splitters | 4× | −3.0 dB per symmetrical branch |
+| Topology            | Procedural arrangement                                  | Capacity |                  Topology loss |
+| ------------------- | ------------------------------------------------------- | -------: | -----------------------------: |
+| 1+0 Standalone      | One dish and one ODU                                    |       1× |                           0 dB |
+| 1+1 HSB             | One dish, two ODUs, asymmetrical T-junction             |       1× |  Main −1.5 dB; standby −7.0 dB |
+| 1+1 Space Diversity | Two vertically separated dishes, 3–6 m apart            |       1× |                           0 dB |
+| 2+0 XPIC            | One dual-polar dish, two ODUs/modems and OMT            |       2× |                           0 dB |
+| 4+0 XPIC            | One dual-polar dish, four ODUs/modems and two splitters |       4× | −3.0 dB per symmetrical branch |
 
 Space Diversity is blocked when the structure lacks vertical clearance for the requested separation. Its inspector explains how the second dish mitigates multipath fading over water, desert plains, and valleys.
 
@@ -179,11 +179,11 @@ This is an interactive relative link-budget/alignment model, not a substitute fo
 
 The **0–360°** slider rotates the actual dish and beam while the virtual ODU-port multimeter updates without replacing the active slider.
 
-| Circular azimuth error | Multimeter | Reference RSL | Beam/link state |
-| --- | ---: | ---: | --- |
-| ±10° | 0.6 V | −78 dBm | Faint flickering amber beam |
-| ±2° | 1.8 V | −58 dBm | Stronger approaching-target reading |
-| Locked on target | 2.4 V | −48 dBm | Solid amber beam, green flashing **LINK LOCKED**, peak tone |
+| Circular azimuth error | Multimeter | Reference RSL | Beam/link state                                             |
+| ---------------------- | ---------: | ------------: | ----------------------------------------------------------- |
+| ±10°                   |      0.6 V |       −78 dBm | Faint flickering amber beam                                 |
+| ±2°                    |      1.8 V |       −58 dBm | Stronger approaching-target reading                         |
+| Locked on target       |      2.4 V |       −48 dBm | Solid amber beam, green flashing **LINK LOCKED**, peak tone |
 
 Readings interpolate between the checkpoints; larger misalignment enters a weak 0.5 V / −88 dBm state before gain and topology adjustments. **Auto-Peak** provides a deterministic target-alignment action. Audio begins only after user interaction and respects browser Web Audio restrictions.
 
@@ -213,12 +213,12 @@ Steps **02 · Open cabinet** and **04 · Aim & Connect** share the same hierarch
 
 The selected generation curates the downstream rack cards, radios, transmission equipment, rectifier population, antennas, and RF cabling. **Mixed-Mode is the default compatibility profile**: it preserves the validated Phase 3 rack population and six installed radio positions. Choosing an explicit generation applies its curated profile instead of merely relabeling the existing hardware.
 
-| Vendor / generation | Cabinet and transmission profile | Cellular RF profile |
-| --- | --- | --- |
-| Ericsson 2G | DUG 20, Router 6471, TDM 1001 with 8×E1, MINI-LINK AMM 2P, and rectifier | Passive 65° panels, TMAs, 7/8-inch coax, and feeder earth kits |
-| Ericsson 5G | Baseband 6630, Router 6471 with 10G SFP+, and N+1 rectifiers | AIR 6449 64T64R AAUs with duplex eCPRI fiber |
-| Huawei 4G / 5G | BBU5900 with UMPT/UBBP and RTN 950A | Curated active radios; AAU5613 for 5G |
-| Nokia 5G | AirScale Subrack with ASIK/ABIL | AirScale MAA 64T64R AAUs |
+| Vendor / generation | Cabinet and transmission profile                                         | Cellular RF profile                                            |
+| ------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Ericsson 2G         | DUG 20, Router 6471, TDM 1001 with 8×E1, MINI-LINK AMM 2P, and rectifier | Passive 65° panels, TMAs, 7/8-inch coax, and feeder earth kits |
+| Ericsson 5G         | Baseband 6630, Router 6471 with 10G SFP+, and N+1 rectifiers             | AIR 6449 64T64R AAUs with duplex eCPRI fiber                   |
+| Huawei 4G / 5G      | BBU5900 with UMPT/UBBP and RTN 950A                                      | Curated active radios; AAU5613 for 5G                          |
+| Nokia 5G            | AirScale Subrack with ASIK/ABIL                                          | AirScale MAA 64T64R AAUs                                       |
 
 ### Three-sector cellular workspace
 
@@ -273,51 +273,51 @@ Common commands are **`help`** and **`clear`**. Output is capped at 300 lines an
 
 ### Ericsson CLI reference
 
-| Command | Live response |
-| --- | --- |
-| `lt all` | Scans the MO hierarchy: cabinet, baseband, installed slots, all three sector azimuth/RET/TX/bandwidth states, and microwave topology, diameter, lock, RSL, and fade margin. |
-| `cabx` | Sector 1/2/3 VSWR, maximum reflection, internal cabinet temperature, and four temperature-dependent fan-group RPM readings. A simulated feeder fault reports 2.27. |
-| `alt` / `al` | Active power, battery, cabinet-door, and VSWR alarms with first-observed timestamps and severities. |
-| `st ru` | Enabled/Active or disabled state of each active radio unit. |
-| `st cel` | Operational state of all three cells. |
-| `st ret` | RET state and live electrical downtilt for each sector. |
-| `st tma` | TMA presence and operational state in legacy/mixed RF profiles. |
-| `cvms <name>` | Captures a plain-state Configuration Version snapshot and reports `CV <name> created successfully and set as STARTABLE`. Previous snapshots become archived. |
-| `cvls` | Lists saved CV names, STARTABLE/ARCHIVED state, and UTC creation timestamps. |
-| `show port` | Router 6471 WAN, CES-to-TDM, and LAN states, including live backhaul lock/RSL and yellow-patch dependency. |
-| `show hardware` | Cabinet/module inventory with simulated part numbers, stable serial numbers, and hardware revisions. |
-| `show system alarm` | Router 6471 master alarm audit and attached-unit inventory. |
+| Command             | Live response                                                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lt all`            | Scans the MO hierarchy: cabinet, baseband, installed slots, all three sector azimuth/RET/TX/bandwidth states, and microwave topology, diameter, lock, RSL, and fade margin. |
+| `cabx`              | Sector 1/2/3 VSWR, maximum reflection, internal cabinet temperature, and four temperature-dependent fan-group RPM readings. A simulated feeder fault reports 2.27.          |
+| `alt` / `al`        | Active power, battery, cabinet-door, and VSWR alarms with first-observed timestamps and severities.                                                                         |
+| `st ru`             | Enabled/Active or disabled state of each active radio unit.                                                                                                                 |
+| `st cel`            | Operational state of all three cells.                                                                                                                                       |
+| `st ret`            | RET state and live electrical downtilt for each sector.                                                                                                                     |
+| `st tma`            | TMA presence and operational state in legacy/mixed RF profiles.                                                                                                             |
+| `cvms <name>`       | Captures a plain-state Configuration Version snapshot and reports `CV <name> created successfully and set as STARTABLE`. Previous snapshots become archived.                |
+| `cvls`              | Lists saved CV names, STARTABLE/ARCHIVED state, and UTC creation timestamps.                                                                                                |
+| `show port`         | Router 6471 WAN, CES-to-TDM, and LAN states, including live backhaul lock/RSL and yellow-patch dependency.                                                                  |
+| `show hardware`     | Cabinet/module inventory with simulated part numbers, stable serial numbers, and hardware revisions.                                                                        |
+| `show system alarm` | Router 6471 master alarm audit and attached-unit inventory.                                                                                                                 |
 
 CV names use 1–32 letters, digits, dots, underscores, or hyphens. Snapshots include engineering configuration, not terminal history or transient audio/animation objects. They are session-only simulations and are not persistent device backups.
 
 ### Huawei MML reference
 
-| Command | Live response |
-| --- | --- |
-| `LST ALM:;` | UMPT/BBU controller active-alarm list with MML return code and timestamps. |
-| `DSP CELL:;` | Three cells, generation-dependent carrier frequency, configured bandwidth, and operational state. |
-| `DSP BRD:;` | BBU5900 subrack board inventory across slots 0–7, including UMPT, UBBP, RTN 950A, fan, power, and empty positions. |
-| `LST RRU:;` | Three remote radios, curated AAU model, health, and optical CPRI link state. |
+| Command      | Live response                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `LST ALM:;`  | UMPT/BBU controller active-alarm list with MML return code and timestamps.                                         |
+| `DSP CELL:;` | Three cells, generation-dependent carrier frequency, configured bandwidth, and operational state.                  |
+| `DSP BRD:;`  | BBU5900 subrack board inventory across slots 0–7, including UMPT, UBBP, RTN 950A, fan, power, and empty positions. |
+| `LST RRU:;`  | Three remote radios, curated AAU model, health, and optical CPRI link state.                                       |
 
 ### Nokia CLI reference
 
-| Command | Live response |
-| --- | --- |
+| Command           | Live response                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `show bts status` | AirScale ASIK/ABIL and installed-module health, active carriers, operational state, and PTP/SyncE lock or holdover. |
-| `show alarms` | Active AirScale/site alarms with timestamps and severities. |
+| `show alarms`     | Active AirScale/site alarms with timestamps and severities.                                                         |
 
 ### Carrier Site Acceptance Audit
 
 Step 05 **Overview** renders the Pages 194–195 pre-flight punch-list. Every row recalculates from live state and shows a green **✓** or red **✗**, the measured value, and a remediation explanation.
 
-| Gate | Acceptance rule |
-| --- | --- |
-| Civil & Foundation | Calculated structural deflection ≤ 0.50° under the site wind model. |
-| Earthing & Lightning | Bonded ground resistance < 5.0 Ω with verified Cadweld pits or rooftop building-earth test links. |
-| Power & Life Support | −48V DC plant, closed rectifier branch, healthy failover capacity, and N+1 modules. |
-| Backhaul Link | Microwave locked with RSL ≥ −55 dBm and fade margin ≥ 30 dB. |
-| RF Line Sweeps | All three sector feeder/antenna lines have worst-case VSWR ≤ 1.32. |
-| Alarm Telemetry | Zero unacknowledged critical/major alarms. Minor maintenance advisories such as an open cabinet door remain visible in the CLI. |
+| Gate                 | Acceptance rule                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Civil & Foundation   | Calculated structural deflection ≤ 0.50° under the site wind model.                                                             |
+| Earthing & Lightning | Bonded ground resistance < 5.0 Ω with verified Cadweld pits or rooftop building-earth test links.                               |
+| Power & Life Support | −48V DC plant, closed rectifier branch, healthy failover capacity, and N+1 modules.                                             |
+| Backhaul Link        | Microwave locked with RSL ≥ −55 dBm and fade margin ≥ 30 dB.                                                                    |
+| RF Line Sweeps       | All three sector feeder/antenna lines have worst-case VSWR ≤ 1.32.                                                              |
+| Alarm Telemetry      | Zero unacknowledged critical/major alarms. Minor maintenance advisories such as an open cabinet door remain visible in the CLI. |
 
 The initial microwave azimuth is intentionally misaligned; use **Auto-Peak** in Step 04 before expecting a six-of-six acceptance result. A cable fault, removed grounding, inadequate rectifier redundancy, structural failure, or critical power/RF alarm disables **GO ON AIR**. The action guard also exists in application state, so invoking the launch function programmatically cannot bypass a failed gate.
 
@@ -353,22 +353,22 @@ All Phase 7 parsing, classification, correlation, and remediation logic runs loc
 
 Use the search-style prompt and **AI BUILD**, or select a quick-start chip. **AI BUILD replaces the current working site** with the parsed reference configuration; save an Ericsson `cvms <name>` snapshot first if the current configuration is needed later in the session.
 
-| Chip | Resulting blueprint |
-| --- | --- |
-| **Zagros Mountain 5G Relay** | Off-grid Mount Safeen; 45 m tubular lattice; 5G NR 64T64R AAUs / 3.5 GHz; dual alternating generators with the existing 12-hour rotation; mandatory Active ESE and Cadweld grounding; aligned 2+0 XPIC backhaul. |
-| **Urban Rooftop 4G/5G C-RAN** | 9 m rooftop RTT/DRAME on non-penetrating dunnage and ballast; Ericsson Mixed-Mode with Baseband 6630; commercial grid; enforced outdoor IP55 housing; single-mode duplex eCPRI to the AAUs. |
-| **Emergency Border Outpost (COW)** | 20 m telescopic COW mast and outriggers; online Generator 1 representing the onboard diesel source without utility dependency; 4G service; aligned 1+0 standalone microwave. |
+| Chip                               | Resulting blueprint                                                                                                                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Zagros Mountain 5G Relay**       | Off-grid Mount Safeen; 45 m tubular lattice; 5G NR 64T64R AAUs / 3.5 GHz; dual alternating generators with the existing 12-hour rotation; mandatory Active ESE and Cadweld grounding; aligned 2+0 XPIC backhaul. |
+| **Urban Rooftop 4G/5G C-RAN**      | 9 m rooftop RTT/DRAME on non-penetrating dunnage and ballast; Ericsson Mixed-Mode with Baseband 6630; commercial grid; enforced outdoor IP55 housing; single-mode duplex eCPRI to the AAUs.                      |
+| **Emergency Border Outpost (COW)** | 20 m telescopic COW mast and outriggers; online Generator 1 representing the onboard diesel source without utility dependency; 4G service; aligned 1+0 standalone microwave.                                     |
 
 The architect uses the same civil, power, rack, microwave, cellular, acceptance, and launch builders as manual configuration. It starts each blueprint from a clean reference power state (100% battery SOC, 1,000 L nominal fuel, and 24°C), then automatically aligns the microwave target. It does **not** bypass engineering normalization or the six-gate launch guard.
 
 #### Local intent vocabulary
 
-| Intent | Recognized local keywords and behavior |
-| --- | --- |
-| Environment | `mountain`, `safeen`, or `zagros` → Mountain Peak; `rooftop`, `roof`, `urban`, or `c-ran` → Urban Rooftop; `desert`, `rural`, or `greenfield` → Rural Greenfield; `cow`, `border`, `emergency`, or `disaster` → Emergency COW. |
-| Generation | `2g`, `3g`, `4g`, `5g`, and `mixed`; mentioning multiple generations also selects Mixed-Mode and reapplies the curated rack/RF profile. |
-| Power | `dual` or `alternating` → dual-generator off-grid; `generator`, `genset`, or `diesel` without a grid → single online generator; `grid` / commercial utility → grid with standby; `battery`, `lithium`, or `vrla` → battery chemistry/capacity intent. |
-| Microwave | `xpic` → 2+0 XPIC; `space diversity` → 1+1 SD; `1+1` → 1+1 HSB; `standalone` / `1+0` → one-dish standalone. |
+| Intent      | Recognized local keywords and behavior                                                                                                                                                                                                                |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment | `mountain`, `safeen`, or `zagros` → Mountain Peak; `rooftop`, `roof`, `urban`, or `c-ran` → Urban Rooftop; `desert`, `rural`, or `greenfield` → Rural Greenfield; `cow`, `border`, `emergency`, or `disaster` → Emergency COW.                        |
+| Generation  | `2g`, `3g`, `4g`, `5g`, and `mixed`; mentioning multiple generations also selects Mixed-Mode and reapplies the curated rack/RF profile.                                                                                                               |
+| Power       | `dual` or `alternating` → dual-generator off-grid; `generator`, `genset`, or `diesel` without a grid → single online generator; `grid` / commercial utility → grid with standby; `battery`, `lithium`, or `vrla` → battery chemistry/capacity intent. |
+| Microwave   | `xpic` → 2+0 XPIC; `space diversity` → 1+1 SD; `1+1` → 1+1 HSB; `standalone` / `1+0` → one-dish standalone.                                                                                                                                           |
 
 Unrecognized words are ignored. Missing intents inherit the selected environment's safe blueprint defaults. For example:
 
@@ -382,13 +382,13 @@ Safeen 4G mountain relay using 1+1 microwave and grid
 
 The sequence is driven by the existing `requestAnimationFrame` loop, not by a chain of timers:
 
-| Elapsed time | Visible action |
-| ---: | --- |
-| **0.0 s** | Build the terrain and equipment pad; reset the camera to the validated clear operational framing. |
-| **0.8 s** | Assemble the tower, COW/outriggers where applicable, and lightning terminal. |
-| **1.6 s** | Open the cabinet, slide the rack cards into their shelves, route power, and start the curated yellow patch when Router + TDM are present. |
-| **2.4 s** | Reveal cellular and microwave antennas; align the hop and show the amber microwave-lock state. |
-| **3.0 s** | Run the existing guarded launch, play the frequency-lock chime, flash the emerald HUD, and report **`[ ON AIR — OPERATIONAL ]`**. |
+| Elapsed time | Visible action                                                                                                                            |
+| -----------: | ----------------------------------------------------------------------------------------------------------------------------------------- |
+|    **0.0 s** | Build the terrain and equipment pad; reset the camera to the validated clear operational framing.                                         |
+|    **0.8 s** | Assemble the tower, COW/outriggers where applicable, and lightning terminal.                                                              |
+|    **1.6 s** | Open the cabinet, slide the rack cards into their shelves, route power, and start the curated yellow patch when Router + TDM are present. |
+|    **2.4 s** | Reveal cellular and microwave antennas; align the hop and show the amber microwave-lock state.                                            |
+|    **3.0 s** | Run the existing guarded launch, play the frequency-lock chime, flash the emerald HUD, and report **`[ ON AIR — OPERATIONAL ]`**.         |
 
 Reduced-motion mode retains these state checkpoints but removes the assembly interpolation and HUD flashing. A failed acceptance gate produces a red **ACCEPTANCE HOLD** instead of a false On-Air result. A later RF, grounding, power, civil, alarm, or backhaul failure still suspends On-Air mode and updates the architect status.
 
@@ -396,10 +396,10 @@ Reduced-motion mode retains these state checkpoints but removes the assembly int
 
 In **Step 04 → Cellular Sectors → Virtual Site Master**, select **AI Waveform Diagnostic**. The classifier samples the selected sector's deterministic **601-point** curve. If a sweep has already been acquired it uses that exact result; otherwise it evaluates the current healthy/fault scenario directly. No training or network inference occurs—the “neural” diagnostic is an explainable local rule classifier over reflection peaks and discontinuity regions.
 
-| Scenario | Confidence | Local diagnostic |
-| --- | ---: | --- |
-| Healthy | **99.1%** | Normal line; nominal **VSWR 1.14 below 1.32**; **no discontinuities**. |
-| Water ingress / cable kink | **96.8%** | High-reflectance discontinuity at **21.3 m**, **VSWR 2.27**, one discontinuity region, and a capacitive-shunt/water-ingress signature. Inspect for a **pinched dielectric** or failed **7/16 DIN weatherproofing**. |
+| Scenario                   | Confidence | Local diagnostic                                                                                                                                                                                                    |
+| -------------------------- | ---------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Healthy                    |  **99.1%** | Normal line; nominal **VSWR 1.14 below 1.32**; **no discontinuities**.                                                                                                                                              |
+| Water ingress / cable kink |  **96.8%** | High-reflectance discontinuity at **21.3 m**, **VSWR 2.27**, one discontinuity region, and a capacitive-shunt/water-ingress signature. Inspect for a **pinched dielectric** or failed **7/16 DIN weatherproofing**. |
 
 The result appears in an emerald healthy card or red fault card next to the interactive DTF graph. Re-running a sweep, changing the fault scenario, or changing the curated vendor/generation profile invalidates stale AI diagnostic state. Classification does not mark a failed line as accepted: the normal Phase 6 RF gate remains red and blocks or suspends launch.
 
@@ -414,11 +414,11 @@ Open the Step 05 terminal and select **AI Copilot**, or type **`ai diagnose`** i
 
 The report identifies the leading root cause, service impact, and backup horizon, then presents three buttons. When triage is active, the same choices are typeable as **`1`**, **`2`**, and **`3`**.
 
-| Choice | Guided action and state change |
-| --- | --- |
-| **1 · Start Generator 1** | Starts the existing crank/vibration/exhaust sequence while the battery holds the DC bus with **0.000 ms** interruption. The ATS transfers after the 15-second stabilization sequence; Generator 1 becomes the active source and **Loss of Mains / Battery Discharging** clears while the utility remains absent. |
-| **2 · Battery math + throttle carriers** | Prints the usable-energy, remaining-energy, current, and before/after autonomy equations plus a battery-discharge SVG curve. Nonessential sectors 2 and 3 are throttled to **43 dBm / 20 MHz**, sector 1 retains full essential coverage, and the radio-load model is reduced to extend autonomy. |
-| **3 · Locate 21.3 m cable repair** | Rebuilds **Step 04 · Cellular Sectors** in Configure mode, places a pulsing 3D marker at the 21.3 m position along the actual RF cable curve, smoothly moves the camera to it, and scrolls Site Master into view for weatherproofing/dielectric repair and a repeat sweep. |
+| Choice                                   | Guided action and state change                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 · Start Generator 1**                | Starts the existing crank/vibration/exhaust sequence while the battery holds the DC bus with **0.000 ms** interruption. The ATS transfers after the 15-second stabilization sequence; Generator 1 becomes the active source and **Loss of Mains / Battery Discharging** clears while the utility remains absent. |
+| **2 · Battery math + throttle carriers** | Prints the usable-energy, remaining-energy, current, and before/after autonomy equations plus a battery-discharge SVG curve. Nonessential sectors 2 and 3 are throttled to **43 dBm / 20 MHz**, sector 1 retains full essential coverage, and the radio-load model is reduced to extend autonomy.                |
+| **3 · Locate 21.3 m cable repair**       | Rebuilds **Step 04 · Cellular Sectors** in Configure mode, places a pulsing 3D marker at the 21.3 m position along the actual RF cable curve, smoothly moves the camera to it, and scrolls Site Master into view for weatherproofing/dielectric repair and a repeat sweep.                                       |
 
 Option 2 uses the shared power model:
 
