@@ -420,14 +420,18 @@ test("hero tab opens first with left logo/title, living nature layers, inverse 3
   assert.equal(document.body.classList.contains("hero-active"), true);
   assert.equal(hero.classList.contains("is-hidden"), false);
 
-  // Image & left branding lockup
+  // Image & compact left branding lockup (cleaned of extra subtitle/paragraph/hint copy)
   const heroImg = hero.querySelector(".hero-image");
   assert.equal(heroImg.getAttribute("src"), "./herotower.PNG");
-  const lines = [...hero.querySelectorAll(".hero-headline-line")].map((el) =>
+  const brandCard = document.getElementById("hero-brand-card");
+  const lines = [...brandCard.querySelectorAll(".hero-headline-line")].map((el) =>
     el.textContent.trim()
   );
   assert.deepEqual(lines, ["TELECOM TOWER", "INSTALLATION SIMULATOR"]);
-  assert.equal(hero.querySelector(".hero-brand-mark").textContent.trim(), "TS");
+  assert.equal(brandCard.querySelector(".hero-brand-mark").textContent.trim(), "TS");
+  assert.doesNotMatch(brandCard.textContent, /INTERACTIVE 3D ENGINEERING SUITE/);
+  assert.doesNotMatch(brandCard.textContent, /Configure towers, multi-vendor/i);
+  assert.doesNotMatch(brandCard.textContent, /Move cursor for 3D depth/i);
 
   // Living nature layers
   assert.ok(hero.querySelector(".hero-sunlight"));

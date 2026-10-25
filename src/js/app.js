@@ -8130,16 +8130,19 @@ function resetHeroPointer(immediate = false) {
 }
 
 function updateHeroPointer(clientX, clientY, immediate = false) {
-  if (!st.heroOpen || window.innerWidth <= 760) return;
+  if (!st.heroOpen) return;
   const w = Math.max(1, window.innerWidth);
   const h = Math.max(1, window.innerHeight);
   const nx = clamp((clientX / w - 0.5) * 2, -1, 1);
   const ny = clamp((clientY / h - 0.5) * 2, -1, 1);
+  const mobile = w <= 760;
+  const shiftX = mobile ? 26 : heroMotion.maxShiftX;
+  const shiftY = mobile ? 0 : heroMotion.maxShiftY;
   // Inverse 3D motion: mouse right -> image moves left; mouse up -> image moves down.
-  heroMotion.targetX = -nx * heroMotion.maxShiftX;
-  heroMotion.targetY = -ny * heroMotion.maxShiftY;
+  heroMotion.targetX = -nx * shiftX;
+  heroMotion.targetY = -ny * shiftY;
   heroMotion.targetRy = -nx * heroMotion.maxTiltY;
-  heroMotion.targetRx = ny * heroMotion.maxTiltX;
+  heroMotion.targetRx = mobile ? 0 : ny * heroMotion.maxTiltX;
   if (immediate || reducedMotionQuery.matches) {
     heroMotion.currentX = heroMotion.targetX;
     heroMotion.currentY = heroMotion.targetY;
@@ -8150,7 +8153,7 @@ function updateHeroPointer(clientX, clientY, immediate = false) {
 }
 
 function updateHeroMotion(dt = 0.016) {
-  if (!st.heroOpen || window.innerWidth <= 760) return;
+  if (!st.heroOpen) return;
   if (reducedMotionQuery.matches) {
     heroMotion.currentX = heroMotion.targetX;
     heroMotion.currentY = heroMotion.targetY;
@@ -8225,11 +8228,50 @@ function initHeroTab() {
   enterBtn?.addEventListener("click", () => setHeroOpen(false));
   toggleBtn?.addEventListener("click", () => setHeroOpen(!st.heroOpen));
 
+  let touchPointerId = null;
+  let touchStartX = 0;
+  let touchBaseX = 0;
+
+  const mobilePanBounds = () => {
+    const artW = 0.82 * Math.max(1, window.innerHeight) * 1.790822;
+    const halfView = Math.max(1, window.innerWidth) / 2;
+    const minX = -Math.max(0, 0.435 * artW - halfView);
+    const maxX = Math.max(0, 0.565 * artW - halfView);
+    return [minX, maxX];
+  };
+
+  hero.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "touch" || event.target.closest(".hero-brand-card")) return;
+    touchPointerId = event.pointerId;
+    touchStartX = event.clientX;
+    touchBaseX = heroMotion.targetX;
+  });
+
   hero.addEventListener("pointermove", (event) => {
-    if (event.pointerType === "touch") return;
+    if (event.pointerType === "touch") {
+      if (event.pointerId !== touchPointerId) return;
+      const [minX, maxX] = mobilePanBounds();
+      heroMotion.targetX = clamp(touchBaseX + (event.clientX - touchStartX), minX, maxX);
+      heroMotion.targetRy = clamp((-heroMotion.targetX / 220) * heroMotion.maxTiltY, -2.2, 2.2);
+      if (reducedMotionQuery.matches) {
+        heroMotion.currentX = heroMotion.targetX;
+        heroMotion.currentRy = heroMotion.targetRy;
+        applyHeroTransform();
+      }
+      return;
+    }
     updateHeroPointer(event.clientX, event.clientY);
   });
-  hero.addEventListener("pointerleave", () => resetHeroPointer(false));
+
+  const endTouchPan = (event) => {
+    if (event.pointerId === touchPointerId) touchPointerId = null;
+  };
+  hero.addEventListener("pointerup", endTouchPan);
+  hero.addEventListener("pointercancel", endTouchPan);
+  hero.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "touch") return;
+    resetHeroPointer(false);
+  });
 
   hero.querySelectorAll(".hero-hotspot").forEach((spot) => {
     const key = spot.dataset.hotspot || null;
