@@ -196,6 +196,10 @@ const st = {
   drawerOpen: true,
   masterStep: 1,
   selectedId: null,
+  onboarding: {
+    active: true,
+    towerSelected: false,
+  },
 };
 
 st.power = {
@@ -231,6 +235,7 @@ st.rack = {
 };
 
 st.generation = "MIXED";
+st.customGenerations = ["2G", "3G"];
 st.cellular = {
   sector: 0,
   fault: false,
@@ -509,13 +514,49 @@ const RACK_SLOT_POWER = {
   ovp: 0,
   sau: 0.005,
 };
+const CUSTOM_GEN_CATALOG = {
+  "2G": { chip: "2G GSM", mbps: 0.2, backhaulMbps: 16, freq: "900 MHz" },
+  "3G": { chip: "3G WCDMA", mbps: 42, backhaulMbps: 100, freq: "2100 MHz" },
+  "4G": { chip: "4G LTE", mbps: 300, backhaulMbps: 500, freq: "1800 MHz" },
+  "5G": { chip: "5G NR", mbps: 3000, backhaulMbps: 3000, freq: "3500 MHz" },
+};
 const SMART_GENERATIONS = {
   "2G": { label: "2G Voice", throughput: "200 kbps", rfMode: "LEGACY" },
   "3G": { label: "3G Web", throughput: "42 Mbps", rfMode: "LEGACY" },
   "4G": { label: "4G LTE", throughput: "300 Mbps", rfMode: "ACTIVE" },
   "5G": { label: "5G NR", throughput: "3.0 Gbps", rfMode: "ACTIVE" },
   MIXED: { label: "Mixed-Mode", throughput: "3.0 Gbps", rfMode: "MIXED" },
+  CUSTOM: { label: "Custom Multi-Gen", throughput: "42.2 Mbps", rfMode: "MIXED" },
 };
+
+function normalizeCustomGenerations(list = st.customGenerations) {
+  const valid = ["2G", "3G", "4G", "5G"].filter((gen) => Array.isArray(list) && list.includes(gen));
+  return valid.length ? valid : ["2G", "3G"];
+}
+
+function formatRadioThroughput(mbps) {
+  if (mbps < 1) return `${Math.round(mbps * 1000)} kbps`;
+  if (mbps < 1000) return `${Number(mbps.toFixed(1))} Mbps`;
+  const gbps = mbps / 1000;
+  return `${Number(gbps.toFixed(2)) === Number(gbps.toFixed(1)) ? gbps.toFixed(1) : gbps.toFixed(2)} Gbps`;
+}
+
+function customGenerationMetrics(list = st.customGenerations) {
+  const gens = normalizeCustomGenerations(list);
+  const cellularMbps = gens.reduce((sum, gen) => sum + CUSTOM_GEN_CATALOG[gen].mbps, 0);
+  const backhaulMbps = gens.reduce((sum, gen) => sum + CUSTOM_GEN_CATALOG[gen].backhaulMbps, 0);
+  const hasLegacy = gens.includes("2G") || gens.includes("3G");
+  const hasActive = gens.includes("4G") || gens.includes("5G");
+  return {
+    gens,
+    label: gens.join("+"),
+    throughput: formatRadioThroughput(cellularMbps),
+    cellularMbps,
+    backhaulMbps,
+    rfMode: hasLegacy && hasActive ? "MIXED" : hasLegacy ? "LEGACY" : "ACTIVE",
+    frequencies: gens.map((gen) => CUSTOM_GEN_CATALOG[gen].freq).join(" / "),
+  };
+}
 
 function smartProfile(vendor = st.rack.vendor, generation = st.generation) {
   const all = Object.keys(RACK_SLOT_POWER);
@@ -526,6 +567,56 @@ function smartProfile(vendor = st.rack.vendor, generation = st.generation) {
     rfMode: "MIXED",
   };
   if (generation === "MIXED") return profile;
+  if (generation === "CUSTOM") {
+    const custom = customGenerationMetrics();
+    const has2G = custom.gens.includes("2G");
+    const has3G = custom.gens.includes("3G");
+    const has4G = custom.gens.includes("4G");
+    const has5G = custom.gens.includes("5G");
+    const slots = ["fau", "router"];
+    if (has2G) slots.push("dug", "tdm", "amm");
+    if (has3G) {
+      slots.push("duw");
+      if (!slots.includes("amm")) slots.push("amm");
+    }
+    if (has4G || has5G) {
+      slots.push("baseband");
+      if ((vendor === "HUAWEI" || vendor === "NOKIA") && !slots.includes("dug")) {
+        slots.push("dug");
+      }
+    }
+    profile.slots = slots;
+    profile.rfMode = custom.rfMode;
+    if (vendor === "ERICSSON") {
+      if (has4G || has5G) {
+        profile.labels.router = "Ericsson Router 6471 · 10G SFP+";
+        profile.labels.baseband = has5G ? "Ericsson Baseband 6648" : "Ericsson Baseband 6630";
+      }
+      if (has2G && !has3G && !has4G && !has5G) profile.labels.amm = "MINI-LINK AMM 2P";
+    } else if (vendor === "HUAWEI" && (has4G || has5G)) {
+      profile.labels = {
+        dug: has2G ? "Huawei UMPT + GSM Card" : "Huawei UMPT Control Card",
+        baseband: "Huawei UBBP Baseband Card",
+        ...(has3G ? { duw: "Huawei UBBP WCDMA Card" } : {}),
+        ...(slots.includes("amm") ? { amm: "Huawei RTN 950A Microwave" } : {}),
+      };
+    } else if (vendor === "NOKIA" && (has4G || has5G)) {
+      profile.labels = {
+        dug: "Nokia ASIK Control Card",
+        baseband: "Nokia ABIL Capacity Card",
+        ...(has3G ? { duw: "Nokia ABIL WCDMA Extension" } : {}),
+      };
+    }
+    profile.chassis = `${vendor} Custom (${custom.label}) · ${[
+      has2G ? "DUG 20" : "",
+      has3G ? "DUW 30" : "",
+      has4G ? "Baseband 6630" : "",
+      has5G ? "Baseband 6648" : "",
+    ]
+      .filter(Boolean)
+      .join(" + ")}`;
+    return profile;
+  }
   const legacy = generation === "2G" || generation === "3G";
   profile.rfMode = legacy ? "LEGACY" : "ACTIVE";
   if (generation === "2G") {
@@ -583,7 +674,11 @@ function applySmartProfile() {
   Object.keys(RACK_SLOT_POWER).forEach((key) => {
     st.rack.slots[key] = profile.slots.includes(key);
   });
-  st.rack.radioCount = st.generation === "MIXED" ? 6 : 0;
+  if (st.generation === "MIXED") st.rack.radioCount = 6;
+  else if (st.generation === "CUSTOM") {
+    const gens = normalizeCustomGenerations();
+    st.rack.radioCount = (gens.includes("2G") ? 3 : 0) + (gens.includes("3G") ? 3 : 0);
+  } else st.rack.radioCount = 0;
   st.cellular.sweeps = [null, null, null];
   st.cellular.aiDiagnostics = [null, null, null];
   cellularSim.running = false;
@@ -611,6 +706,10 @@ function rackCardContent(key) {
 }
 
 function cellularGeneration() {
+  if (st.generation === "CUSTOM") {
+    const custom = customGenerationMetrics();
+    return { label: custom.label, throughput: custom.throughput, rfMode: custom.rfMode };
+  }
   return SMART_GENERATIONS[st.generation] || SMART_GENERATIONS.MIXED;
 }
 
@@ -672,7 +771,11 @@ function calculateRack() {
   );
   return {
     loadKw,
-    backhaulGbps: st.rack.slots.router ? 30 : 0,
+    backhaulGbps: st.rack.slots.router
+      ? st.generation === "CUSTOM"
+        ? Number((customGenerationMetrics().backhaulMbps / 1000).toFixed(2))
+        : 30
+      : 0,
     e1Lines: st.rack.slots.tdm ? 8 : 0,
     voiceCalls: st.rack.slots.dug ? 96 : 0,
     opticalPorts: st.rack.slots.baseband ? 15 : 0,
@@ -800,7 +903,10 @@ function calculateMicrowave() {
     alignmentRsl = -88;
   }
   const xpicActive = topology.xpic || m.xpicBoost;
-  const capacityMbps = 1000 * (topology.xpic ? topology.multiplier : m.xpicBoost ? 2 : 1);
+  const baseBackhaulMbps =
+    st.generation === "CUSTOM" ? customGenerationMetrics().backhaulMbps : 1000;
+  const capacityMbps =
+    baseBackhaulMbps * (topology.xpic ? topology.multiplier : m.xpicBoost ? 2 : 1);
   const oduCount = m.xpicBoost ? Math.max(2, topology.odus) : topology.odus;
   const modemCount = m.xpicBoost && !topology.xpic ? 4 : topology.modems;
   const rsl = alignmentRsl + gain - referenceGain - loss;
@@ -845,6 +951,8 @@ function normalizeMicrowaveState() {
 
 function normalizeCellularState() {
   if (!SMART_GENERATIONS[st.generation]) st.generation = "MIXED";
+  st.customGenerations = normalizeCustomGenerations(st.customGenerations);
+  SMART_GENERATIONS.CUSTOM.throughput = customGenerationMetrics(st.customGenerations).throughput;
   st.cellular.sector = clamp(Math.round(Number(st.cellular.sector) || 0), 0, 2);
   st.cellular.fault = !!st.cellular.fault;
   st.cellular.sectors.forEach((sector, index) => {
@@ -1192,6 +1300,10 @@ function transmissionSceneMode() {
 }
 
 function cellularThroughputGbps() {
+  if (st.generation === "CUSTOM") {
+    const gbps = customGenerationMetrics().cellularMbps / 1000;
+    return gbps >= 0.1 ? gbps.toFixed(2) : gbps.toFixed(4);
+  }
   return (
     { "2G": "0.0002", "3G": "0.042", "4G": "0.300", "5G": "3.0", MIXED: "3.0" }[st.generation] ||
     "3.0"
@@ -2227,27 +2339,27 @@ function powerRegister(object, data) {
 function getPowerPositions() {
   if (st.env === "URBAN_ROOFTOP")
     return {
-      ats: [-8.5, 0, -7.8],
-      mdb: [-6.3, 0, -7.8],
-      acBoard: [-4.25, 0, -7.8],
-      rectifier: [4.1, 0, -7.65],
-      battery: [7.8, 0, -7.65],
-      ac1: [3.5, 0, -5.25],
-      ac2: [7, 0, -5.25],
+      ats: [-8.8, 0, -7.8],
+      mdb: [-6.7, 0, -7.8],
+      acBoard: [-4.75, 0, -7.8],
+      rectifier: [0.5, 0, -7.65],
+      battery: [3.25, 0, -7.65],
+      ac1: [5.4, 0.36, -7.85],
+      ac2: [6.7, 0.36, -7.85],
       grid: [-10, 0, -8],
       gen1: [14, -8.15, 4],
       gen2: [14, -8.15, -1],
     };
   return {
-    ats: [0, 0, -7.8],
-    mdb: [1.85, 0, -7.8],
-    acBoard: [3.65, 0, -7.8],
-    rectifier: [5.9, 0, -7.65],
-    battery: [9, 0, -7.65],
-    ac1: [4.1, 0, -4.75],
-    ac2: [7.1, 0, -4.75],
-    grid: [-12, 0, -9],
-    gen1: [-8, 0, -3.8],
+    ats: [-3.1, 0, -7.8],
+    mdb: [-1.4, 0, -7.8],
+    acBoard: [0.2, 0, -7.8],
+    rectifier: [2.2, 0, -7.65],
+    battery: [5.0, 0, -7.65],
+    ac1: [7.15, 0.36, -7.88],
+    ac2: [8.45, 0.36, -7.88],
+    grid: [-11.2, 0, -8.8],
+    gen1: [-8, 0, -3.2],
     gen2: [-8, 0, 2.4],
   };
 }
@@ -2569,29 +2681,82 @@ function buildBatteryBank() {
   });
 }
 
+function buildACPlinth(parent) {
+  const plinth = new T.Group();
+  parent.add(plinth);
+  const cx = (powerPositions.ac1[0] + powerPositions.ac2[0]) / 2;
+  const cz = powerPositions.ac1[2];
+  box(2.8, 0.1, 1.04, MAT.concrete, cx, 0.05, cz, plinth);
+  const pad = box(2.64, 0.36, 0.9, MAT.concreteLight, cx, 0.21, cz, plinth);
+  [powerPositions.ac1[0], powerPositions.ac2[0]].forEach((ux) => {
+    [-0.38, 0.38].forEach((ox) => {
+      box(0.09, 0.05, 0.72, MAT.galvanized, ux + ox, 0.41, cz, plinth, false);
+    });
+  });
+  powerRegister(plinth, {
+    id: "ac-plinth",
+    kind: "ac-plinth",
+    powerKey: "climate",
+    title: "Raised Concrete A/C Plinth · Vibration-Isolated Pad",
+    focusSize: 4.2,
+    focusObject: pad,
+  });
+}
+
 function buildACUnit(index, position) {
   const group = new T.Group();
   group.position.set(...position);
   siteRoot.add(group);
-  box(1.45, 0.13, 0.9, MAT.concrete, 0, 0.07, 0, group);
-  box(1.25, 0.9, 0.68, MAT.white, 0, 0.62, 0, group);
+  // Anti-vibration isolation mounts atop the dedicated raised concrete plinth.
+  [-0.42, 0.42].forEach((mx) =>
+    [-0.24, 0.24].forEach((mz) => box(0.11, 0.05, 0.11, MAT.rubber, mx, 0.04, mz, group, false))
+  );
+  box(1.18, 0.88, 0.66, MAT.white, 0, 0.5, 0, group);
   const fan = new T.Group();
-  fan.position.set(-0.23, 0.65, 0.37);
+  fan.position.set(-0.2, 0.53, 0.35);
   group.add(fan);
-  const ring = mesh(new T.TorusGeometry(0.28, 0.025, 7, 24), MAT.steel, fan);
+  const ring = mesh(new T.TorusGeometry(0.26, 0.024, 7, 24), MAT.steel, fan);
   ring.castShadow = false;
   for (let i = 0; i < 4; i++) {
-    const blade = box(0.09, 0.42, 0.035, MAT.dark, 0, 0, 0, fan, false);
+    const blade = box(0.085, 0.39, 0.035, MAT.dark, 0, 0, 0, fan, false);
     blade.rotation.z = (i * Math.PI) / 2 + 0.35;
   }
-  const led = statusLed(group, 0.45, 0.88, 0.37, LED.off, 0.04);
-  box(0.22, 0.5, 0.2, MAT.galvanized, 0.43, 0.52, 0.36, group);
+  const led = statusLed(group, 0.42, 0.76, 0.35, LED.off, 0.04);
+  box(0.2, 0.48, 0.18, MAT.galvanized, 0.4, 0.42, 0.34, group);
+  // Brass service valves and twin copper refrigerant lines into the shelter wall.
+  box(0.09, 0.14, 0.08, MAT.brass, 0.46, 0.28, -0.22, group, false);
+  const wallZ = (st.env === "URBAN_ROOFTOP" ? -8.52 : -8.74) - position[2];
+  const indoorY = 2.22;
+  cable(
+    [
+      V3(0.45, 0.3, -0.24),
+      V3(0.45, 0.3, wallZ + 0.08),
+      V3(0.32, indoorY, wallZ + 0.08),
+      V3(0.24, indoorY, wallZ - 0.06),
+    ],
+    0.02,
+    MAT.copper,
+    group,
+    14
+  );
+  cable(
+    [
+      V3(0.5, 0.25, -0.24),
+      V3(0.5, 0.25, wallZ + 0.05),
+      V3(0.38, indoorY - 0.05, wallZ + 0.05),
+      V3(0.3, indoorY - 0.05, wallZ - 0.06),
+    ],
+    0.013,
+    MAT.copper,
+    group,
+    14
+  );
   const indoor = new T.Group();
-  indoor.position.set(position[0], position[1] + 2.55, st.env === "URBAN_ROOFTOP" ? -8.55 : -8.35);
+  indoor.position.set(position[0], position[1] + 2.22, st.env === "URBAN_ROOFTOP" ? -8.36 : -8.56);
   siteRoot.add(indoor);
-  box(1.4, 0.4, 0.34, MAT.white, 0, 0, 0, indoor);
-  box(1.12, 0.07, 0.04, MAT.dark, 0, -0.11, 0.19, indoor, false);
-  const indoorLed = statusLed(indoor, 0.52, 0.08, 0.2, LED.off, 0.03);
+  box(1.16, 0.38, 0.32, MAT.white, 0, 0, 0, indoor);
+  box(0.96, 0.065, 0.04, MAT.dark, 0, -0.1, 0.17, indoor, false);
+  const indoorLed = statusLed(indoor, 0.44, 0.08, 0.18, LED.off, 0.03);
   acVisuals.push({ index, fan, led, indoorLed });
   powerRegister(group, {
     id: `ac-unit-${index}`,
@@ -2657,13 +2822,15 @@ function buildPower() {
   const system = new T.Group();
   siteRoot.add(system);
   if (st.env === "URBAN_ROOFTOP") {
-    box(5.2, 0.12, 1.4, MAT.concreteLight, -6.35, 0.06, -7.8, system);
-    box(7.7, 0.12, 1.4, MAT.concreteLight, 5.9, 0.06, -7.65, system);
+    box(5.4, 0.12, 1.4, MAT.concreteLight, -6.7, 0.06, -7.8, system);
+    box(8.1, 0.12, 1.5, MAT.concreteLight, 3.35, 0.06, -7.75, system);
+    box(7.9, 2.8, 0.12, MAT.building, 3.35, 1.46, -8.58, system);
   } else {
-    box(12.2, 0.18, 4.9, MAT.concreteLight, 5, 0.09, -6.4, system);
-    box(12.2, 2.95, 0.12, MAT.building, 5, 1.57, -8.82, system);
-    [-1.05, 11.05].forEach((x) => box(0.12, 2.95, 0.12, MAT.steel, x, 1.57, -8.75, system));
+    box(13.2, 0.18, 3.1, MAT.concreteLight, 2.6, 0.09, -7.55, system);
+    box(13.1, 2.95, 0.12, MAT.building, 2.6, 1.57, -8.82, system);
+    [-3.9, 9.1].forEach((x) => box(0.12, 2.95, 0.12, MAT.steel, x, 1.57, -8.75, system));
   }
+  buildACPlinth(system);
   powerRegister(system, {
     id: "power-system",
     kind: "power-system",
@@ -2720,8 +2887,31 @@ function buildPower() {
   cable([point("ats", 0.4), point("mdb", 0.4)], 0.045, MAT.copper, wiring, 8);
   cable([point("mdb", 0.32), point("rectifier", 0.32)], 0.04, MAT.blue, wiring, 16);
   cable([point("mdb", 0.28), point("acBoard", 0.28)], 0.035, MAT.orange, wiring, 8);
-  cable([point("acBoard", 0.22), point("ac1", 0.22)], 0.025, MAT.dark, wiring, 12);
-  cable([point("acBoard", 0.2), point("ac2", 0.2)], 0.025, MAT.dark, wiring, 12);
+  const acRearZ = st.env === "URBAN_ROOFTOP" ? -8.42 : -8.56;
+  cable(
+    [
+      point("acBoard", 0.22),
+      V3(powerPositions.acBoard[0], 0.22, acRearZ),
+      V3(powerPositions.ac1[0], 0.22, acRearZ),
+      point("ac1", 0.12),
+    ],
+    0.025,
+    MAT.dark,
+    wiring,
+    16
+  );
+  cable(
+    [
+      point("acBoard", 0.2),
+      V3(powerPositions.acBoard[0], 0.2, acRearZ),
+      V3(powerPositions.ac2[0], 0.2, acRearZ),
+      point("ac2", 0.1),
+    ],
+    0.025,
+    MAT.dark,
+    wiring,
+    16
+  );
   cable([point("rectifier", 0.35), point("battery", 0.35)], 0.05, MAT.copper, wiring, 10);
   cable([point("rectifier", 0.28), V3(2, 0.18, -3), V3(0, 0.25, 0)], 0.04, MAT.blue, wiring, 24);
   const fuelStart = V3(fuelTankWorld.x, fuelTankWorld.y + 0.28, fuelTankWorld.z);
@@ -3912,16 +4102,15 @@ function buildCellularAntenna(index, kind, xOffset) {
     rackLabel("ACTIVE · 64T64R · eCPRI", 0.58, 0.05, 0, 0.31, depth / 2 + 0.013, group, true);
   } else {
     rackLabel("PASSIVE SECTOR · 65°", 0.52, 0.06, 0, 0.46, depth / 2 + 0.012, group, true);
-    rackLabel(
-      st.generation === "MIXED" ? "LEGACY 2G / 3G" : cellularGeneration().label.toUpperCase(),
-      0.48,
-      0.05,
-      0,
-      0.35,
-      depth / 2 + 0.013,
-      group,
-      true
-    );
+    const passiveBandLabel =
+      st.generation === "MIXED"
+        ? "LEGACY 2G / 3G"
+        : st.generation === "CUSTOM" && normalizeCustomGenerations().includes("5G")
+          ? normalizeCustomGenerations()
+              .filter((gen) => gen !== "5G")
+              .join(" / ")
+          : cellularGeneration().label.toUpperCase();
+    rackLabel(passiveBandLabel, 0.48, 0.05, 0, 0.35, depth / 2 + 0.013, group, true);
   }
   statusLed(
     group,
@@ -4435,20 +4624,25 @@ function selectComponent(id, focus = true) {
   st.tab = "overview";
   st.drawerOpen = true;
   if (selected.data.domain === "cellular") {
+    st.onboarding.active = false;
     st.masterStep = 4;
     st.microwave.system = "CELLULAR";
     if (Number.isInteger(selected.data.sector)) st.cellular.sector = selected.data.sector;
     stopMicrowaveAudio();
   } else if (selected.data.domain === "microwave") {
+    st.onboarding.active = false;
     st.masterStep = 4;
     st.microwave.system = "MICROWAVE";
   } else if (selected.data.domain === "rack") {
+    st.onboarding.active = false;
     st.masterStep = 2;
     rackSim.doorTarget = 1;
   } else if (selected.data.domain === "power") {
+    st.onboarding.active = false;
     st.masterStep = 3;
   } else st.masterStep = 1;
   updateSelection();
+  updateHUD();
   renderDrawer();
   $("#drawer-content").scrollTop = 0;
   if (focus && selected.data.kind === "earth-pit") {
@@ -5233,16 +5427,28 @@ function selectedRackKey() {
 
 function renderSmartFilter(context) {
   const profile = smartProfile();
+  const custom = customGenerationMetrics();
+  const customChips =
+    st.generation === "CUSTOM"
+      ? `<div class="custom-gen-panel" role="group" aria-label="Custom multi-generation toggles"><div class="custom-gen-label"><span>CUSTOM MULTI-GEN COMBINATION</span><span>${custom.label} · ${custom.throughput}</span></div><div class="custom-gen-chips">${Object.entries(
+          CUSTOM_GEN_CATALOG
+        )
+          .map(([genKey, item]) => {
+            const checked = custom.gens.includes(genKey);
+            return `<button type="button" class="custom-gen-chip ${checked ? "active" : ""}" data-action="custom-gen-toggle" data-value="${genKey}" aria-pressed="${checked}">[${checked ? "✓" : "&nbsp;"}] ${item.chip}</button>`;
+          })
+          .join("")}</div></div>`
+      : "";
   return `<section class="smart-filter" aria-label="Smart vendor and generation filter ${context}"><div class="smart-filter-head">HIERARCHICAL HARDWARE DECISION TREE · SHARED STEP 02 ↔ STEP 04</div><div class="smart-step"><div class="smart-step-label">STEP A · VENDOR<small>Select equipment ecosystem</small></div><div class="smart-options smart-vendors">${["ERICSSON", "HUAWEI", "NOKIA"].map((vendor) => `<button class="smart-option ${st.rack.vendor === vendor ? "active" : ""}" data-action="smart-vendor" data-value="${vendor}">${vendor}<small>${vendor === "ERICSSON" ? "RBS / AIR / Baseband" : vendor === "HUAWEI" ? "BBU / AAU / RTN" : "AirScale / MAA"}</small></button>`).join("")}</div></div><div class="smart-step"><div class="smart-step-label">STEP B · GENERATION<small>Curate all downstream hardware</small></div><div class="smart-options smart-generations">${Object.entries(
     SMART_GENERATIONS
   )
     .map(
       ([generation, data]) =>
-        `<button class="smart-option ${st.generation === generation ? "active" : ""}" data-action="smart-generation" data-value="${generation}">${data.label}<small>${data.throughput}</small></button>`
+        `<button class="smart-option ${st.generation === generation ? "active" : ""}" data-action="smart-generation" data-value="${generation}">${data.label}<small>${generation === "CUSTOM" ? custom.throughput : data.throughput}</small></button>`
     )
     .join(
       ""
-    )}</div></div><div class="smart-profile">ACTIVE PROFILE · ${profile.chassis}<br>RF CURATION · ${profile.rfMode === "LEGACY" ? "65° panels + TMA + 7/8-inch coax" : profile.rfMode === "ACTIVE" ? `${aauModel()} + duplex eCPRI fiber` : "Legacy panels + active AAUs + coax and fiber"}</div></section>`;
+    )}</div></div>${customChips}<div class="smart-profile">ACTIVE PROFILE · ${profile.chassis}<br>RF CURATION · ${profile.rfMode === "LEGACY" ? "65° panels + TMA + 7/8-inch coax" : profile.rfMode === "ACTIVE" ? `${aauModel()} + duplex eCPRI fiber` : "Legacy panels + active AAUs + coax and fiber"}</div></section>`;
 }
 
 function renderRackNavigator() {
@@ -5957,6 +6163,7 @@ function formatAlarmReport() {
 }
 
 function carrierFrequency() {
+  if (st.generation === "CUSTOM") return customGenerationMetrics().frequencies;
   return {
     "2G": "900 MHz",
     "3G": "2100 MHz",
@@ -5981,6 +6188,7 @@ function cvSnapshot() {
       power: st.power,
       rack: st.rack,
       generation: st.generation,
+      customGenerations: st.customGenerations,
       cellular: st.cellular,
       microwave: st.microwave,
     })
@@ -6291,6 +6499,7 @@ function goOnAir(preserveStep = false) {
 }
 
 function toggleTerminal() {
+  st.onboarding.active = false;
   if (st.masterStep !== 5) {
     st.terminal.open = true;
     ensureTerminalWelcome();
@@ -6599,6 +6808,7 @@ function setAIBuildStatus(status) {
 }
 
 function applyAIConfig(config) {
+  st.onboarding.active = false;
   st.env = config.env;
   st.tower = config.tower;
   st.H = config.H;
@@ -7011,11 +7221,52 @@ function applyTriageChoice(choice) {
   return "ERROR: Choose triage option 1, 2 or 3.";
 }
 
+function renderOnboardingStep1() {
+  const env = ENVIRONMENTS[st.env];
+  const tower = TOWERS[st.tower];
+  const [min, max] = tower.range;
+  const progress = ((st.H - min) / (max - min)) * 100;
+  return `<div class="onboarding-banner">
+      <small>NEW SITE SETUP · STEP 01</small>
+      <h3>Choose Your Tower Structure</h3>
+      <p>Pick your site environment, select a tower type, and set its height. Vendor cabinets, power telemetry, and RF tools unlock progressively as you build.</p>
+    </div>
+    <div class="section-label">01 · Site environment</div>
+    <div class="option-grid">${Object.entries(ENVIRONMENTS)
+      .map(
+        ([key, item]) =>
+          `<button class="option ${st.env === key ? "active" : ""}" data-action="environment" data-value="${key}" aria-pressed="${st.env === key}">${item.name}<small>${item.wind} km/h · ${item.allowed.length} allowed ${item.allowed.length === 1 ? "type" : "types"}</small></button>`
+      )
+      .join("")}</div>
+    <div class="section-label">02 · Tower structure</div>
+    <div class="tower-grid">${Object.entries(TOWERS)
+      .map(([key, item]) => {
+        const allowed = env.allowed.includes(key);
+        const reason = allowed
+          ? `${item.range[0]}–${item.range[1]} m · ${item.detail}`
+          : towerDisallowedReason(st.env, key);
+        return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small></button>`;
+      })
+      .join("")}</div>
+    <div class="section-label">03 · Tower height</div>
+    <div class="control-card">
+      <div class="control-row"><label for="tower-height">Tower height</label><output class="control-value" id="height-value" for="tower-height">${st.H} m</output></div>
+      <input type="range" id="tower-height" min="${min}" max="${max}" step="1" value="${st.H}" style="--range-progress:${progress}%" aria-valuetext="${st.H} meters">
+      <div class="range-limits"><span>MIN ${min} m</span><span>STRUCTURAL LIMIT ${max} m</span></div>
+    </div>
+    ${
+      st.onboarding.towerSelected
+        ? `<div class="onboarding-next-wrap"><button type="button" class="onboarding-next-btn" data-action="onboarding-next" id="onboarding-next-btn">[ Next: Select Vendor &amp; Cabinet → ]</button></div>`
+        : `<div class="onboarding-hint">Select a tower structure or adjust height above to unlock Step 02 →</div>`
+    }`;
+}
+
 function renderOverview() {
   if (st.masterStep === 5) return renderPhase6Overview();
   if (isTransmissionMode()) return renderSmartFilter("step4") + renderMicrowaveOverview();
   if (isRackMode()) return renderSmartFilter("step2") + renderRackOverview();
   if (isPowerSelection()) return renderPowerOverview();
+  if (st.onboarding.active && st.masterStep === 1 && !st.selectedId) return renderOnboardingStep1();
   const env = ENVIRONMENTS[st.env];
   const calc = calculateEngineering();
   const power = calculatePower();
@@ -7041,6 +7292,7 @@ function renderConfigure() {
   if (isTransmissionMode()) return renderSmartFilter("step4") + renderMicrowaveConfigure();
   if (isRackMode()) return renderSmartFilter("step2") + renderRackConfigure();
   if (isPowerSelection()) return renderPowerConfigure();
+  if (st.onboarding.active && st.masterStep === 1 && !st.selectedId) return renderOnboardingStep1();
   const env = ENVIRONMENTS[st.env];
   const tower = TOWERS[st.tower];
   const [min, max] = tower.range;
@@ -7159,8 +7411,10 @@ function renderDrawer() {
     .querySelectorAll(".tab")
     .forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.value === st.tab)));
   const selected = registry.get(st.selectedId);
+  const tabsBar = $("#drawer .tabs");
+  if (tabsBar) tabsBar.hidden = Boolean(st.onboarding.active && st.masterStep === 1 && !selected);
   const titles = {
-    1: "Meet the site",
+    1: st.onboarding.active && !selected ? "New site setup" : "Meet the site",
     2: "Open the cabinet",
     3: "Power & backup",
     4: "Aim & Connect",
@@ -7170,13 +7424,15 @@ function renderDrawer() {
   $(".drawer-title h2").textContent = titles[st.masterStep] || titles[1];
   $("#drawer-subtitle").textContent = selected
     ? `Inspecting · ${selected.data.title}`
-    : st.masterStep === 2
-      ? `${rackHousing().vendor} ${rackHousing().model} · 19-inch rack`
-      : st.masterStep === 4
-        ? "Microwave backhaul · live link alignment"
-        : st.masterStep === 5
-          ? `${st.rack.vendor} CLI · carrier acceptance · operational launch`
-          : `${ENVIRONMENTS[st.env].title} · ${TOWERS[st.tower].short}`;
+    : st.onboarding.active && st.masterStep === 1
+      ? "Step 01 · Select your tower structure & height"
+      : st.masterStep === 2
+        ? `${rackHousing().vendor} ${rackHousing().model} · 19-inch rack`
+        : st.masterStep === 4
+          ? "Microwave backhaul · live link alignment"
+          : st.masterStep === 5
+            ? `${st.rack.vendor} CLI · carrier acceptance · operational launch`
+            : `${ENVIRONMENTS[st.env].title} · ${TOWERS[st.tower].short}`;
   document.querySelectorAll(".master-step").forEach((button) => {
     const active = Number(button.dataset.step) === st.masterStep;
     button.classList.toggle("active", active);
@@ -7191,6 +7447,26 @@ function renderDrawer() {
         ? renderSpecs()
         : renderOverview();
   scrollTerminalOutput();
+}
+
+function syncHUDScroll() {
+  const hud = $("#site-hud");
+  const shell = $("#site-hud-shell");
+  const leftBtn = $("#hud-scroll-left");
+  const rightBtn = $("#hud-scroll-right");
+  if (!hud || !shell || !leftBtn || !rightBtn) return;
+  const maxScroll = Math.max(0, hud.scrollWidth - hud.clientWidth);
+  const scrollable = maxScroll > 2;
+  const canLeft = scrollable && hud.scrollLeft > 2;
+  const canRight = scrollable && hud.scrollLeft < maxScroll - 2;
+  hud.classList.toggle("is-scrollable", scrollable);
+  shell.classList.toggle("is-scrollable", scrollable);
+  leftBtn.hidden = !canLeft;
+  rightBtn.hidden = !canRight;
+  leftBtn.disabled = !canLeft;
+  rightBtn.disabled = !canRight;
+  shell.classList.toggle("can-scroll-left", canLeft);
+  shell.classList.toggle("can-scroll-right", canRight);
 }
 
 function updateHUD() {
@@ -7212,12 +7488,28 @@ function updateHUD() {
       if (st.masterStep === 5) renderDrawer();
     }
   }
+  const hud = $("#site-hud");
+  const scroll = hud.scrollLeft;
+  const livePill = $("#live-pill");
+  if (st.onboarding.active && !launch.onAir && !aiBuild.running) {
+    hud.classList.add("is-setup");
+    hud.innerHTML = `
+      <div class="hud-cell hud-setup" id="hud-setup-status"><small>Site Status</small><strong>[ Setting Up Site... ]</strong></div>
+      <div class="hud-cell"><small>Environment</small><strong>${ENVIRONMENTS[st.env].name}</strong></div>
+      <div class="hud-cell"><small>Structure</small><strong>${st.onboarding.towerSelected ? `${TOWERS[st.tower].short} · ${st.H} m` : "Choose tower below"}</strong></div>
+      <div class="hud-cell hud-setup-hint"><small>Guided Setup</small><strong>Pick tower &amp; height in Step 01 to unlock full live telemetry</strong></div>`;
+    hud.scrollLeft = 0;
+    livePill.classList.remove("on-air");
+    livePill.classList.add("setup");
+    livePill.querySelector("span").textContent = "NEW SITE SETUP";
+    syncHUDScroll();
+    return;
+  }
+  hud.classList.remove("is-setup");
   const calc = calculatePower();
   const microwave = calculateMicrowave();
   const alarms = powerAlarms();
   const eventActive = powerSim.phase !== "NORMAL" || alarms.length > 0;
-  const hud = $("#site-hud");
-  const scroll = hud.scrollLeft;
   hud.innerHTML = `
     ${launch.onAir ? `<div class="hud-cell hud-on-air" id="hud-on-air"><small>Site status · On Air</small><strong>[ ON AIR — OPERATIONAL ] • ${calc.totalLoad.toFixed(2)} kW • ${calc.autonomy.toFixed(1)} h • ${cellularThroughputGbps()} Gbps</strong></div>` : ""}
     <div class="hud-cell"><small>Environment</small><strong>${ENVIRONMENTS[st.env].name}</strong></div>
@@ -7238,11 +7530,12 @@ function updateHUD() {
         : ""
     }`;
   hud.scrollLeft = scroll;
-  const livePill = $("#live-pill");
+  livePill.classList.remove("setup");
   livePill.classList.toggle("on-air", launch.onAir);
   livePill.querySelector("span").textContent = launch.onAir
     ? "ON AIR · SITE OPERATIONAL"
     : "LIVE ENGINEERING MODEL";
+  syncHUDScroll();
 }
 
 let toastTimer;
@@ -7798,6 +8091,7 @@ function updatePowerSimulation(now, dt) {
 
 function enterMasterStep(step) {
   if (![1, 2, 3, 4, 5].includes(step)) return;
+  if (step > 1) st.onboarding.active = false;
   const previousStep = st.masterStep;
   if (step !== 4) stopMicrowaveAudio();
   st.masterStep = step;
@@ -7827,10 +8121,12 @@ function enterMasterStep(step) {
     cameraGoal.theta = 0.82;
     cameraGoal.phi = 0.95;
     cameraGoal.size = window.innerWidth < 760 ? 12 : 8;
+    updateHUD();
     renderDrawer();
   } else {
     st.selectedId = null;
     updateSelection();
+    updateHUD();
     renderDrawer();
     fitSite();
   }
@@ -7876,11 +8172,19 @@ $("#drawer").addEventListener("click", (event) => {
     st.tab = value;
     st.drawerOpen = true;
     renderDrawer();
+  } else if (action === "onboarding-next") {
+    st.onboarding.active = false;
+    enterMasterStep(2);
+    st.tab = "configure";
+    renderDrawer();
+    updateHUD();
+    toast("STEP 02 · CHOOSE VENDOR & BUILD RACK SLOTS");
   } else if (action === "environment" && ENVIRONMENTS[value]) {
     st.env = value;
     st.tower = ENVIRONMENTS[value].defaultTower;
     st.H = TOWERS[st.tower].defaultHeight;
     st.lightning = ENVIRONMENTS[value].mandatoryESE ? "ESE_ACTIVE" : "FRANKLIN";
+    if (st.onboarding.active) st.onboarding.towerSelected = true;
     st.selectedId = null;
     normalizeState();
     rebuildSite();
@@ -7894,6 +8198,7 @@ $("#drawer").addEventListener("click", (event) => {
     st.tower = value;
     const [min, max] = TOWERS[value].range;
     st.H = clamp(st.H, min, max);
+    if (st.onboarding.active) st.onboarding.towerSelected = true;
     st.selectedId = null;
     rebuildSite();
     fitSite();
@@ -7991,8 +8296,32 @@ $("#drawer").addEventListener("click", (event) => {
           : st.selectedId;
     rebuildSite();
     toast(
-      `${SMART_GENERATIONS[value].label.toUpperCase()} · ${SMART_GENERATIONS[value].throughput} · PROFILE ACTIVE`
+      `${cellularGeneration().label.toUpperCase()} · ${cellularGeneration().throughput} · PROFILE ACTIVE`
     );
+  } else if (action === "custom-gen-toggle" && CUSTOM_GEN_CATALOG[value]) {
+    const current = normalizeCustomGenerations(st.customGenerations);
+    if (current.includes(value)) {
+      if (current.length <= 1) {
+        toast("SELECT AT LEAST ONE RADIO GENERATION");
+        return;
+      }
+      st.customGenerations = current.filter((item) => item !== value);
+    } else {
+      st.customGenerations = normalizeCustomGenerations([...current, value]);
+    }
+    st.generation = "CUSTOM";
+    applySmartProfile();
+    st.selectedId =
+      st.masterStep === 2
+        ? "rack-cabinet"
+        : st.masterStep === 4
+          ? st.microwave.system === "CELLULAR"
+            ? "rf-system"
+            : "mw-system"
+          : st.selectedId;
+    rebuildSite();
+    const custom = customGenerationMetrics();
+    toast(`${custom.label} · ${custom.throughput} · RACK & BACKHAUL UPDATED`);
   } else if (action === "rf-sector" && [0, 1, 2].includes(Number(value))) {
     const index = Number(value),
       tab = st.tab;
@@ -8265,6 +8594,19 @@ $("#drawer").addEventListener("input", (event) => {
   if (event.target.id !== "tower-height") return;
   const [min, max] = TOWERS[st.tower].range;
   st.H = clamp(Number(event.target.value), min, max);
+  if (st.onboarding.active && !st.onboarding.towerSelected) {
+    st.onboarding.towerSelected = true;
+    const hint = $("#drawer-content .onboarding-hint");
+    if (hint) {
+      hint.outerHTML = `
+        <div class="onboarding-next-wrap">
+          <button class="onboarding-next-btn" data-action="onboarding-next" type="button">
+            <span>Next: Select Vendor &amp; Cabinet</span>
+            <span class="onboarding-next-arrow" aria-hidden="true">→</span>
+          </button>
+        </div>`;
+    }
+  }
   event.target.style.setProperty("--range-progress", `${((st.H - min) / (max - min)) * 100}%`);
   event.target.setAttribute("aria-valuetext", `${st.H} meters`);
   $("#height-value").textContent = `${st.H} m`;
@@ -8409,9 +8751,67 @@ function fitSite(immediate = false) {
 
 function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  syncHUDScroll();
 }
 window.addEventListener("resize", resize);
 resize();
+
+// Horizontal HUD scroller: chevrons, wheel-to-horizontal, and pointer drag.
+(() => {
+  const hud = $("#site-hud");
+  const leftBtn = $("#hud-scroll-left");
+  const rightBtn = $("#hud-scroll-right");
+  if (!hud || !leftBtn || !rightBtn) return;
+
+  const scrollStep = (dir) => {
+    hud.scrollBy({
+      left: dir * Math.max(180, Math.round(hud.clientWidth * 0.55)),
+      behavior: reducedMotionQuery.matches ? "auto" : "smooth",
+    });
+  };
+  leftBtn.addEventListener("click", () => scrollStep(-1));
+  rightBtn.addEventListener("click", () => scrollStep(1));
+  hud.addEventListener("scroll", syncHUDScroll, { passive: true });
+  hud.addEventListener(
+    "wheel",
+    (event) => {
+      if (hud.scrollWidth <= hud.clientWidth + 2) return;
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+        event.preventDefault();
+        hud.scrollLeft += event.deltaY;
+        syncHUDScroll();
+      }
+    },
+    { passive: false }
+  );
+
+  let dragging = false;
+  let dragPointerId = null;
+  let startX = 0;
+  let startScrollLeft = 0;
+  hud.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch" || hud.scrollWidth <= hud.clientWidth + 2) return;
+    dragging = true;
+    dragPointerId = event.pointerId;
+    startX = event.clientX;
+    startScrollLeft = hud.scrollLeft;
+    hud.classList.add("is-dragging");
+    hud.setPointerCapture?.(event.pointerId);
+  });
+  hud.addEventListener("pointermove", (event) => {
+    if (!dragging || event.pointerId !== dragPointerId) return;
+    hud.scrollLeft = startScrollLeft - (event.clientX - startX);
+    syncHUDScroll();
+  });
+  const endDrag = (event) => {
+    if (!dragging || (event && event.pointerId !== dragPointerId)) return;
+    dragging = false;
+    dragPointerId = null;
+    hud.classList.remove("is-dragging");
+  };
+  hud.addEventListener("pointerup", endDrag);
+  hud.addEventListener("pointercancel", endDrag);
+})();
 
 const raycaster = new T.Raycaster();
 raycaster.params.Line.threshold = 0.08;
@@ -8583,8 +8983,12 @@ window.TowerStudio = {
   microwaveSimulation: microwaveSim,
   microwaveVisuals,
   smartGenerations: SMART_GENERATIONS,
+  customGenCatalog: CUSTOM_GEN_CATALOG,
+  customGenerationMetrics,
   smartProfile,
   applySmartProfile,
+  getPowerPositions,
+  syncHUDScroll,
   aauModel,
   calculateSweep,
   sectorBeamGeometry,
@@ -8635,6 +9039,7 @@ window.CellForge = window.TowerStudio;
 setAIArchitectOpen(st.ai.architectOpen);
 syncAIArchitect();
 rebuildSite();
+syncHUDScroll();
 fitSite(true);
 animate();
 $("#loading").classList.add("hidden");

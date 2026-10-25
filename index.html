@@ -23,12 +23,12 @@
       <div class="brand">
         <div class="brand-mark">TS</div>
         <div>
-          <div class="eyebrow">Tower Studio workbench / Phase 01–07</div>
+          <div class="eyebrow">INTERACTIVE 3D ENGINEERING SUITE</div>
           <h1>TOWER STUDIO</h1>
         </div>
       </div>
       <div class="top-actions">
-        <div class="live-pill" id="live-pill"><i></i><span>LIVE ENGINEERING MODEL</span></div>
+        <div class="live-pill" id="live-pill"><i></i><span>NEW SITE SETUP</span></div>
         <div class="zoom-buttons">
           <button class="icon-button" id="zoom-out" aria-label="Zoom out">−</button>
           <button class="icon-button" id="zoom-in" aria-label="Zoom in">+</button>
@@ -45,7 +45,27 @@
       </div>
     </header>
 
-    <div class="site-hud" id="site-hud" aria-live="polite"></div>
+    <div class="site-hud-shell" id="site-hud-shell">
+      <button
+        type="button"
+        class="hud-scroll-btn hud-scroll-left"
+        id="hud-scroll-left"
+        aria-label="Scroll telemetry bar left"
+        hidden
+      >
+        ‹
+      </button>
+      <div class="site-hud" id="site-hud" aria-live="polite"></div>
+      <button
+        type="button"
+        class="hud-scroll-btn hud-scroll-right"
+        id="hud-scroll-right"
+        aria-label="Scroll telemetry bar right"
+        hidden
+      >
+        ›
+      </button>
+    </div>
     <section class="ai-architect" id="ai-architect" aria-label="Offline AI Architect command bar">
       <button class="ai-mobile-toggle" id="ai-mobile-toggle" aria-label="Open AI Architect">
         ✨ AI
