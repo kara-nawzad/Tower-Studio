@@ -133,7 +133,7 @@ test("the hero image ships WebP and AVIF variants behind the original PNG", () =
     for (const ext of ["webp", "avif"]) {
       assert.match(
         HTML,
-        new RegExp(`herotower-${width}\.${ext} ${width}w`),
+        new RegExp(`herotower-${width}[.]${ext} ${width}w`),
         `${ext} ${width} is offered in the srcset`
       );
     }
@@ -155,8 +155,8 @@ test("the hero image ships WebP and AVIF variants behind the original PNG", () =
 test("the build copies the vendor directory and every hero encoding", () => {
   const build = fs.readFileSync(path.join(ROOT_DIR, "scripts/build.mjs"), "utf8");
   for (const width of [1200, 1678, 2200]) {
-    assert.match(build, new RegExp(`herotower-${width}\\.webp`));
-    assert.match(build, new RegExp(`herotower-${width}\\.avif`));
+    assert.match(build, new RegExp(`herotower-${width}[.]webp`));
+    assert.match(build, new RegExp(`herotower-${width}[.]avif`));
   }
   assert.match(build, /vendor/);
 });

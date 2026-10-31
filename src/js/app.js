@@ -335,8 +335,12 @@ st.lockedNotice = null;
 // Bottom-sheet snap height on phones: peek / half / full.
 st.sheet = "half";
 
+const AI_IDLE_STATUS = "LOCAL NLP · OFFLINE INFERENCE · ZERO API KEYS";
 const aiBuild = {
   running: false,
+  // Manual changes borrow the same staged assembly as the AI architect: the
+  // site is put together piece by piece instead of blinking into place.
+  manual: false,
   completed: false,
   started: 0,
   duration: 3000,
@@ -347,9 +351,33 @@ const aiBuild = {
   layers: [],
   cards: [],
   powerRoutes: [],
-  status: "LOCAL NLP · OFFLINE INFERENCE · ZERO API KEYS",
+  status: AI_IDLE_STATUS,
   flashUntil: 0,
 };
+
+// The AI build takes three seconds and stages the cabinet internals as well;
+// a manual change is quicker and only re-stages the structure groups.
+const AI_SCHEDULE = {
+  tower: 800,
+  rack: 1600,
+  antennas: 2400,
+  grow: 560,
+  cards: 620,
+  routes: 680,
+  duration: 3000,
+};
+const MANUAL_SCHEDULE = {
+  tower: 220,
+  rack: 700,
+  antennas: 1220,
+  grow: 420,
+  cards: 520,
+  routes: 560,
+  duration: 1800,
+};
+function assemblySchedule() {
+  return aiBuild.manual ? MANUAL_SCHEDULE : AI_SCHEDULE;
+}
 
 const triage = {
   active: false,
@@ -8046,16 +8074,18 @@ function addAIAssemblyLayer(object, start, kind) {
 }
 
 function prepareAIBuildVisuals() {
+  const schedule = assemblySchedule();
   aiBuild.layers = [];
   aiBuild.cards = [];
   aiBuild.powerRoutes = [];
-  addAIAssemblyLayer(registry.get("tower")?.object, 800, "tower");
-  addAIAssemblyLayer(registry.get("cow-outriggers")?.object, 800, "tower");
-  addAIAssemblyLayer(registry.get("lightning-terminal")?.object, 800, "tower");
-  addAIAssemblyLayer(rackVisuals.root, 1600, "rack");
-  addAIAssemblyLayer(registry.get("power-cabling")?.object, 1600, "power");
-  addAIAssemblyLayer(microwaveVisuals.root, 2400, "antennas");
-  addAIAssemblyLayer(cellularVisuals.root, 2400, "antennas");
+  addAIAssemblyLayer(registry.get("tower")?.object, schedule.tower, "tower");
+  addAIAssemblyLayer(registry.get("cow-outriggers")?.object, schedule.tower, "tower");
+  addAIAssemblyLayer(registry.get("lightning-terminal")?.object, schedule.tower, "tower");
+  addAIAssemblyLayer(rackVisuals.root, schedule.rack, "rack");
+  addAIAssemblyLayer(registry.get("power-cabling")?.object, schedule.rack, "power");
+  addAIAssemblyLayer(microwaveVisuals.root, schedule.antennas, "antennas");
+  addAIAssemblyLayer(cellularVisuals.root, schedule.antennas, "antennas");
+  if (aiBuild.manual) return;
   rackVisuals.modules.forEach((object) => {
     if (!object) return;
     aiBuild.cards.push({ object, z: object.position.z });
@@ -8140,6 +8170,26 @@ function cancelAIBuild() {
   setAIBuildStatus("BUILD CANCELLED · LOCAL NLP · OFFLINE INFERENCE · ZERO API KEYS");
 }
 
+// Manual builds get the same staged assembly as the AI architect. It is a
+// cosmetic staging only: nothing about the site state changes, and a reduced
+// motion preference skips it entirely.
+function startManualAssembly(label) {
+  if (aiBuild.running) return false;
+  if (reducedMotionQuery.matches) return false;
+  aiBuild.running = true;
+  aiBuild.manual = true;
+  aiBuild.completed = false;
+  aiBuild.started = performance.now();
+  aiBuild.duration = MANUAL_SCHEDULE.duration;
+  aiBuild.stage = -1;
+  aiBuild.prompt = "";
+  aiBuild.config = null;
+  aiBuild.intents = [];
+  setAIBuildStatus(`ASSEMBLING · ${label}`);
+  syncAIArchitect();
+  return true;
+}
+
 function startAIBuild(prompt) {
   if (aiBuild.running) return false;
   const parsed = parseAIArchitect(prompt);
@@ -8148,8 +8198,10 @@ function startAIBuild(prompt) {
     return false;
   }
   aiBuild.running = true;
+  aiBuild.manual = false;
   aiBuild.completed = false;
   aiBuild.started = performance.now();
+  aiBuild.duration = AI_SCHEDULE.duration;
   aiBuild.stage = -1;
   aiBuild.prompt = parsed.prompt;
   aiBuild.config = parsed.config;
@@ -8184,25 +8236,40 @@ function startAIBuild(prompt) {
 
 function updateAIFeatures(now, dt) {
   if (aiBuild.running) {
+    const schedule = assemblySchedule();
     const elapsed = Math.max(0, now - aiBuild.started);
     const stage =
-      elapsed >= 3000 ? 4 : elapsed >= 2400 ? 3 : elapsed >= 1600 ? 2 : elapsed >= 800 ? 1 : 0;
+      elapsed >= schedule.duration
+        ? 4
+        : elapsed >= schedule.antennas
+          ? 3
+          : elapsed >= schedule.rack
+            ? 2
+            : elapsed >= schedule.tower
+              ? 1
+              : 0;
     if (stage !== aiBuild.stage) {
       aiBuild.stage = stage;
-      if (stage === 1) setAIBuildStatus("0.8 s · TOWER ASSEMBLY · STRUCTURE + LIGHTNING");
-      if (stage === 2) {
-        setAIBuildStatus("1.6 s · CABINET OPEN · CARDS SEATED · POWER ROUTED");
-        rackSim.doorTarget = 1;
-        rackSim.patchLink = calculateRack().patchReady;
-        rackSim.patchProgress = 0;
-        rackSim.patchStarted = now;
-        rackSim.patchCompletedNotified = false;
-      }
-      if (stage === 3) {
-        st.microwave.azimuth = st.microwave.targetAzimuth;
-        microwaveSim.azimuth = st.microwave.azimuth;
-        setAIBuildStatus("2.4 s · ANTENNAS ONLINE · AMBER MICROWAVE LOCK");
-        updateMicrowaveVisuals(now);
+      if (aiBuild.manual) {
+        if (stage === 1) setAIBuildStatus("ASSEMBLING · TOWER + STRUCTURE");
+        if (stage === 2) setAIBuildStatus("ASSEMBLING · CABINET + POWER ROUTES");
+        if (stage === 3) setAIBuildStatus("ASSEMBLING · ANTENNAS ONLINE");
+      } else {
+        if (stage === 1) setAIBuildStatus("0.8 s · TOWER ASSEMBLY · STRUCTURE + LIGHTNING");
+        if (stage === 2) {
+          setAIBuildStatus("1.6 s · CABINET OPEN · CARDS SEATED · POWER ROUTED");
+          rackSim.doorTarget = 1;
+          rackSim.patchLink = calculateRack().patchReady;
+          rackSim.patchProgress = 0;
+          rackSim.patchStarted = now;
+          rackSim.patchCompletedNotified = false;
+        }
+        if (stage === 3) {
+          st.microwave.azimuth = st.microwave.targetAzimuth;
+          microwaveSim.azimuth = st.microwave.azimuth;
+          setAIBuildStatus("2.4 s · ANTENNAS ONLINE · AMBER MICROWAVE LOCK");
+          updateMicrowaveVisuals(now);
+        }
       }
     }
     const reduced = reducedMotionQuery.matches;
@@ -8211,7 +8278,7 @@ function updateAIFeatures(now, dt) {
         ? elapsed >= layer.start
           ? 1
           : 0
-        : clamp((elapsed - layer.start) / 560, 0, 1);
+        : clamp((elapsed - layer.start) / schedule.grow, 0, 1);
       layer.object.visible = elapsed >= layer.start;
       if (!layer.object.visible) return;
       const eased = 1 - Math.pow(1 - progress, 3);
@@ -8221,14 +8288,22 @@ function updateAIFeatures(now, dt) {
       else layer.object.scale.multiplyScalar(0.72 + eased * 0.28);
     });
     aiBuild.cards.forEach((card) => {
-      const progress = reduced ? (elapsed >= 1600 ? 1 : 0) : clamp((elapsed - 1600) / 620, 0, 1);
+      const progress = reduced
+        ? elapsed >= schedule.rack
+          ? 1
+          : 0
+        : clamp((elapsed - schedule.rack) / schedule.cards, 0, 1);
       card.object.position.z = card.z + (1 - (1 - Math.pow(1 - progress, 3))) * 0.72;
     });
-    const routeProgress = reduced ? (elapsed >= 1600 ? 1 : 0) : clamp((elapsed - 1600) / 680, 0, 1);
+    const routeProgress = reduced
+      ? elapsed >= schedule.rack
+        ? 1
+        : 0
+      : clamp((elapsed - schedule.rack) / schedule.routes, 0, 1);
     aiBuild.powerRoutes.forEach((route) =>
       route.object.geometry.setDrawRange(0, Math.floor(route.count * routeProgress))
     );
-    if (elapsed >= 3000) {
+    if (elapsed >= schedule.duration) {
       aiBuild.layers.forEach((layer) => {
         layer.object.visible = true;
         layer.object.position.copy(layer.position);
@@ -8238,15 +8313,25 @@ function updateAIFeatures(now, dt) {
         card.object.position.z = card.z;
       });
       aiBuild.powerRoutes.forEach((route) => route.object.geometry.setDrawRange(0, route.count));
-      const launched = goOnAir(true);
-      aiBuild.running = false;
-      aiBuild.completed = launched;
-      if (launched) {
-        aiBuild.flashUntil = now + 1500;
-        $("#site-hud").classList.add("ai-flash");
-        setAIBuildStatus("[ ON AIR — OPERATIONAL ] · 3.0 s · LOCAL AI BUILD COMPLETE");
-      } else setAIBuildStatus("ACCEPTANCE HOLD · RED ENGINEERING GATES REMAIN BLOCKING");
-      syncAIArchitect();
+      if (aiBuild.manual) {
+        // A manual change is not a launch: the site simply finishes assembling
+        // and the command bar goes back to its idle line.
+        aiBuild.running = false;
+        aiBuild.manual = false;
+        aiBuild.completed = false;
+        setAIBuildStatus(AI_IDLE_STATUS);
+        syncAIArchitect();
+      } else {
+        const launched = goOnAir(true);
+        aiBuild.running = false;
+        aiBuild.completed = launched;
+        if (launched) {
+          aiBuild.flashUntil = now + 1500;
+          $("#site-hud").classList.add("ai-flash");
+          setAIBuildStatus("[ ON AIR — OPERATIONAL ] · 3.0 s · LOCAL AI BUILD COMPLETE");
+        } else setAIBuildStatus("ACCEPTANCE HOLD · RED ENGINEERING GATES REMAIN BLOCKING");
+        syncAIArchitect();
+      }
     }
   }
   if (aiBuild.flashUntil && now >= aiBuild.flashUntil) {
@@ -10161,6 +10246,7 @@ $("#drawer").addEventListener("click", (event) => {
     if (st.onboarding.active) st.onboarding.towerSelected = true;
     st.selectedId = null;
     normalizeState();
+    startManualAssembly("TERRAIN + FOUNDATIONS");
     rebuildSite();
     fitSite();
     toast(`${ENVIRONMENTS[value].name.toUpperCase()} · CIVIL RULES APPLIED`);
@@ -10174,6 +10260,7 @@ $("#drawer").addEventListener("click", (event) => {
     st.H = clamp(st.H, min, max);
     if (st.onboarding.active) st.onboarding.towerSelected = true;
     st.selectedId = null;
+    startManualAssembly("TOWER STRUCTURE");
     rebuildSite();
     fitSite();
   } else if (action === "lightning" && ["FRANKLIN", "ESE_ACTIVE"].includes(value)) {
@@ -10209,6 +10296,7 @@ $("#drawer").addEventListener("click", (event) => {
     st.microwave.xpicBoost = false;
     st.selectedId = "mw-system";
     normalizeMicrowaveState();
+    startManualAssembly("DISH ARRAY");
     rebuildSite();
     toast(
       `${MICROWAVE_TOPOLOGIES[value].label.toUpperCase()} · ${formatCapacity(calculateMicrowave().capacityMbps)}`
@@ -10603,6 +10691,9 @@ $("#drawer").addEventListener("change", (event) => {
   }
   if (event.target.id === "tower-height") {
     renderDrawer();
+    // The drag itself already rebuilt the scene (throttled); on release the
+    // finished mast is staged back in so the change reads as a build step.
+    if (startManualAssembly("TOWER HEIGHT")) rebuildSite();
     fitSite();
   }
   if (event.target.id === "grounding-toggle") {
@@ -11161,6 +11252,8 @@ window.TowerStudio = {
   aiBlueprints: AI_BLUEPRINTS,
   parseAIArchitect,
   startAIBuild,
+  startManualAssembly,
+  manualAssemblyMs: MANUAL_SCHEDULE.duration,
   aiBuild,
   updateAI: updateAIFeatures,
   setAIArchitectOpen,

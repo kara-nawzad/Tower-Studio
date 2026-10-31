@@ -91,6 +91,12 @@ cabinet`, `03 Power`, `04 Aim & Connect` → `4A Backhaul` / `4B Sectors`,
   running lake swells with sun glitter, three wind gusts, 21 grass blades along
   the bottom edge that bend with the gusts, and six drifting seeds — all CSS, all
   disabled under `prefers-reduced-motion`.
+- **Manual builds are staged like AI builds.** Changing the environment, the
+  tower type, the tower height (on release) or the dish topology now plays the
+  same piece-by-piece assembly the AI architect used: terrain and mast first,
+  then the cabinet and power routes, then the antennas, over 1.8 s. It is
+  staging only — no state is touched and nothing launches — and
+  `prefers-reduced-motion` skips it.
 - **One typeface set.** `<code>`, `<kbd>`, `<samp>` and `<pre>` were falling back
   to the browser's monospace; the step 04 Backhaul/Sectors chips, the AI search
   field, the AI blueprint chips and the drawer toggle all carried emoji that

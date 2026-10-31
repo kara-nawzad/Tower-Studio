@@ -90,7 +90,12 @@ window.__guard = (() => {
 })();
 `;
 
-export function createHeadlessStudio({ width = 1440, height = 900, guard = false } = {}) {
+export function createHeadlessStudio({
+  width = 1440,
+  height = 900,
+  guard = false,
+  reducedMotion = false,
+} = {}) {
   const html = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
   const appJs = fs.readFileSync(path.join(ROOT_DIR, "src/js/app.js"), "utf8");
 
@@ -124,7 +129,8 @@ export function createHeadlessStudio({ width = 1440, height = 900, guard = false
           return value === "landscape" ? width >= height : height >= width;
         // No pointer or motion model in jsdom; report the desktop defaults.
         if (rawFeature === "pointer") return value === "fine";
-        if (rawFeature === "prefers-reduced-motion") return value === "no-preference";
+        if (rawFeature === "prefers-reduced-motion")
+          return reducedMotion ? value === "reduce" : value === "no-preference";
         return false;
       });
     return {

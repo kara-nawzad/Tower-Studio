@@ -88,3 +88,50 @@ test("the drawer renders without a missing helper after the audio removal", () =
   assert.match(text, /NO ACTIVE POWER ALARMS/);
   dom.window.close();
 });
+
+test("manual builds stage the site in like the AI architect does", () => {
+  const { studio, document, dom } = createHeadlessStudio({ width: 1440, height: 900 });
+  studio.state.onboarding.active = false;
+  studio.rebuild();
+
+  // A manual change arms the same staging used by the AI build: the tower comes
+  // in first, then the cabinet and power routes, then the antennas.
+  assert.equal(studio.startManualAssembly("TOWER STRUCTURE"), true);
+  studio.rebuild();
+  studio.updateAI(studio.aiBuild.started, 0.016);
+  assert.equal(studio.aiBuild.running, true);
+  assert.equal(studio.aiBuild.manual, true);
+  assert.ok(studio.aiBuild.layers.length >= 4, `${studio.aiBuild.layers.length} staged groups`);
+  // The tower starts hidden and grows into place.
+  const towerLayer = studio.aiBuild.layers.find((layer) => layer.kind === "tower");
+  assert.ok(towerLayer, "the tower is staged");
+  assert.equal(towerLayer.object.visible, false, "the tower has not appeared yet");
+
+  // Halfway through, the tower is visible and scaled up but not finished.
+  studio.updateAI(studio.aiBuild.started + 400, 0.016);
+  assert.equal(towerLayer.object.visible, true);
+  assert.ok(
+    towerLayer.object.scale.y > 0.02 && towerLayer.object.scale.y <= towerLayer.scale.y + 1e-6
+  );
+
+  // At the end everything is restored, nothing launches, and the bar resets.
+  studio.updateAI(studio.aiBuild.started + studio.manualAssemblyMs + 20, 0.016);
+  assert.equal(studio.aiBuild.running, false);
+  assert.equal(studio.aiBuild.manual, false);
+  assert.equal(studio.launch.onAir, false, "a manual change never launches the site");
+  assert.equal(towerLayer.object.scale.y, towerLayer.scale.y);
+  assert.match(document.querySelector("#ai-build-status").textContent, /LOCAL NLP/);
+  dom.window.close();
+});
+
+test("a reduced-motion preference skips the manual staging entirely", () => {
+  const { studio, dom } = createHeadlessStudio({
+    width: 1440,
+    height: 900,
+    reducedMotion: true,
+  });
+  studio.state.onboarding.active = false;
+  assert.equal(studio.startManualAssembly("TOWER STRUCTURE"), false);
+  assert.equal(studio.aiBuild.running, false);
+  dom.window.close();
+});
