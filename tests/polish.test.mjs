@@ -236,3 +236,15 @@ test("the ambient layer moves with the wind and stops for reduced motion", () =>
   dom.window.close();
   still.dom.window.close();
 });
+
+test("every asset the stylesheet points at exists when the browser resolves it", () => {
+  const urls = [...CSS.matchAll(/url\("([^"]+)"\)/g)].map((match) => match[1]);
+  assert.ok(urls.length > 0, "the hero backdrop is drawn from a file");
+  urls.forEach((url) => {
+    assert.ok(!url.startsWith("data:"), `${url} should be a file`);
+    // The browser resolves a relative url against the stylesheet's own
+    // directory (src/styles/), not against the page or the project root.
+    const resolved = path.join(ROOT_DIR, "src/styles", url);
+    assert.ok(fs.existsSync(resolved), `${url} resolves to ${resolved}, which is missing`);
+  });
+});

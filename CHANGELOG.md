@@ -97,6 +97,11 @@ cabinet`, `03 Power`, `04 Aim & Connect` → `4A Backhaul` / `4B Sectors`,
   then the cabinet and power routes, then the antennas, over 1.8 s. It is
   staging only — no state is touched and nothing launches — and
   `prefers-reduced-motion` skips it.
+- **The hero backdrop actually loads.** The defocused copy of the hero that
+  fills the letterbox pointed at `./herotower-1200.webp`, which the browser
+  resolves against `src/styles/` — a 404, so the fitted artwork floated on
+  empty paper on wide screens. It is now `../../herotower-1200.webp` and a
+  test resolves every `url()` in the stylesheet the way the browser does.
 - **Ambient life in every environment.** The scene now carries weather and
   wildlife that moves with the site: a crop field that leans as a gust crosses
   it, dust and spindrift drifting downwind, low mist or haze sheets sweeping

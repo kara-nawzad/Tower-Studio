@@ -697,7 +697,7 @@ body.hero-active .viewport-note {
   position: absolute;
   inset: -14%;
   pointer-events: none;
-  background-image: url("./herotower-1200.webp"), url("./herotower.PNG");
+  background-image: url("../../herotower-1200.webp"), url("../../herotower.PNG");
   background-size: cover;
   background-position: center;
   filter: blur(42px) saturate(1.1);
