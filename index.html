@@ -301,8 +301,26 @@
       DRAG · ORBIT &nbsp; / &nbsp; WHEEL · ZOOM &nbsp; / &nbsp; CLICK · INSPECT
     </div>
     <div id="selection-tag"></div>
+    <div class="gesture-hint" id="gesture-hint" role="status" hidden>
+      <span
+        >Drag to orbit · pinch or wheel to zoom · tap any object to inspect it. Use the
+        <strong>PANEL</strong> handle to change how much of the controls you see.</span
+      >
+      <button type="button" class="gesture-hint-close" data-action="dismiss-gesture-hint">
+        GOT IT
+      </button>
+    </div>
 
     <section class="drawer" id="drawer" aria-label="Site configuration drawer">
+      <button
+        type="button"
+        class="sheet-handle"
+        id="sheet-handle"
+        aria-label="Expand control panel"
+      >
+        <span class="sheet-grip" aria-hidden="true"></span>
+        <span class="sheet-handle-text">PANEL</span>
+      </button>
       <div class="drawer-head">
         <div class="step-number">01</div>
         <div class="drawer-title">

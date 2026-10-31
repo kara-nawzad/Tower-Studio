@@ -11,6 +11,46 @@ if (!window.THREE) {
 // -------------------------------------------------------------------------
 // Engineering catalogue and state
 // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
+// Responsive viewport: one matchMedia helper replaces raw innerWidth checks
+// -------------------------------------------------------------------------
+const VIEWPORT_QUERIES = {
+  phone: "(max-width: 767px)",
+  tablet: "(min-width: 768px) and (max-width: 1099px)",
+  desktop: "(min-width: 1100px)",
+  compact: "(max-width: 430px)",
+  shortLandscape: "(max-height: 450px)",
+  coarse: "(pointer: coarse)",
+};
+
+const viewportQueries = {};
+
+function matchesViewport(key) {
+  const query = VIEWPORT_QUERIES[key];
+  if (!query) return false;
+  if (!viewportQueries[key]) {
+    if (typeof window.matchMedia !== "function") return false;
+    viewportQueries[key] = window.matchMedia(query);
+  }
+  return viewportQueries[key].matches;
+}
+
+function isPhoneViewport() {
+  return matchesViewport("phone");
+}
+function isDesktopViewport() {
+  return matchesViewport("desktop");
+}
+function isCompactViewport() {
+  return matchesViewport("compact");
+}
+function isShortLandscape() {
+  return matchesViewport("shortLandscape");
+}
+function isTouchPointer() {
+  return matchesViewport("coarse");
+}
+
 const T = window.THREE;
 const $ = (selector) => document.querySelector(selector);
 const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -280,7 +320,7 @@ const launch = {
 };
 
 st.ai = {
-  architectOpen: window.innerWidth > 760,
+  architectOpen: !isPhoneViewport(),
   lastPrompt: "",
   // A parsed plan waiting for the user to confirm it before it is built.
   pendingPlan: null,
@@ -292,6 +332,8 @@ st.restoreNotice = false;
 st.detail = "GUIDED";
 // Set when the user clicks a step that is not reachable yet.
 st.lockedNotice = null;
+// Bottom-sheet snap height on phones: peek / half / full.
+st.sheet = "half";
 
 const aiBuild = {
   running: false,
@@ -4899,14 +4941,14 @@ function selectComponent(id, focus = true) {
   } else if (focus && selected.data.domain === "cellular") {
     if (selected.data.rfKind === "system") {
       cameraGoal.target.set(structureTop.x, structureTop.y - 1.45, structureTop.z);
-      cameraGoal.size = window.innerWidth < 760 ? 12 : 9;
+      cameraGoal.size = isPhoneViewport() ? 12 : 9;
       cameraGoal.theta = 0.82;
       cameraGoal.phi = 0.68;
     } else {
       const focusObject = selected.data.focusObject || selected.object;
       const bounds = new T.Box3().setFromObject(focusObject);
       if (!bounds.isEmpty()) cameraGoal.target.copy(bounds.getCenter(new T.Vector3()));
-      cameraGoal.size = (selected.data.focusSize || 2) * (window.innerWidth < 760 ? 1.35 : 1);
+      cameraGoal.size = (selected.data.focusSize || 2) * (isPhoneViewport() ? 1.35 : 1);
       cameraGoal.theta =
         selected.data.rfKind === "siteMaster"
           ? 0.82
@@ -4917,12 +4959,12 @@ function selectComponent(id, focus = true) {
   } else if (focus && selected.data.domain === "microwave") {
     if (selected.data.mwKind === "system") {
       cameraGoal.target.set(structureTop.x + 0.8, structureTop.y - 1.5, structureTop.z);
-      cameraGoal.size = window.innerWidth < 760 ? 10 : 7;
+      cameraGoal.size = isPhoneViewport() ? 10 : 7;
     } else {
       const focusObject = selected.data.focusObject || selected.object;
       const bounds = new T.Box3().setFromObject(focusObject);
       if (!bounds.isEmpty()) cameraGoal.target.copy(bounds.getCenter(new T.Vector3()));
-      cameraGoal.size = (selected.data.focusSize || 2.5) * (window.innerWidth < 760 ? 1.35 : 1);
+      cameraGoal.size = (selected.data.focusSize || 2.5) * (isPhoneViewport() ? 1.35 : 1);
     }
     const rear = ["odu", "splitter", "modem", "coax"].includes(selected.data.mwKind);
     cameraGoal.theta =
@@ -4934,9 +4976,9 @@ function selectComponent(id, focus = true) {
     if (!bounds.isEmpty()) cameraGoal.target.copy(bounds.getCenter(new T.Vector3()));
     const wholeCabinet = ["cabinet", "door"].includes(selected.data.rackKey);
     cameraGoal.size =
-      wholeCabinet && window.innerWidth < 760
+      wholeCabinet && isPhoneViewport()
         ? 4.2
-        : (selected.data.focusSize || 0.7) * (window.innerWidth < 760 ? 1.3 : 1);
+        : (selected.data.focusSize || 0.7) * (isPhoneViewport() ? 1.3 : 1);
     cameraGoal.theta = 1.12;
     cameraGoal.phi = 1.12;
     if (reducedMotionQuery.matches) snapCameraToGoal();
@@ -4947,7 +4989,7 @@ function selectComponent(id, focus = true) {
       const bounds = new T.Box3().setFromObject(selected.object);
       if (!bounds.isEmpty()) cameraGoal.target.copy(bounds.getCenter(new T.Vector3()));
     }
-    cameraGoal.size = (selected.data.focusSize || 4) * (window.innerWidth < 760 ? 1.22 : 1);
+    cameraGoal.size = (selected.data.focusSize || 4) * (isPhoneViewport() ? 1.22 : 1);
     cameraGoal.theta = ["generator", "grid", "fuel"].includes(selected.data.powerKey)
       ? Math.atan2(cameraGoal.target.z, cameraGoal.target.x)
       : 0.82;
@@ -6144,7 +6186,7 @@ function renderSiteMaster() {
         ? `VSWR: ${result.max.toFixed(2)} @ ${result.faultDistance.toFixed(1)} m [FAIL - High Reflection!]`
         : `VSWR: ${result.max.toFixed(2)} [PASS]`
       : "VSWR / DTF · SWEEP REQUIRED";
-  return `<section class="rf-testbench" aria-label="Interactive RF Testbench"><div class="rf-testbench-head"><h3>Virtual Site Master</h3><span>VSWR + DTF · 0–60m</span></div><button class="rf-action primary" data-action="rf-run-sweep" ${running ? "disabled" : ""}>[ Run RF Cable & Antenna Sweep ]</button><button class="rf-action ${st.cellular.fault ? "fault" : ""}" data-action="rf-fault" aria-pressed="${st.cellular.fault}">[ Simulate Waterlogged Connector / Cable Kink ]</button><div class="rf-sweep-badge ${running ? "running" : result ? (result.pass ? "pass" : "fail") : ""}" data-live="rf-sweep-badge">${badge}</div><div class="rf-progress" id="rf-sweep-progress" style="--sweep-progress:${running ? "0%" : result ? "100%" : "0%"}"><span></span></div>${sweepGraph(result)}<div class="rf-cursor-readout" id="rf-cursor-readout">${result ? "Move over the SVG trace to inspect distance and VSWR." : "The interactive trace appears after the sweep."}</div><p class="rf-explanation ${result && result.fault ? "fault" : ""}">${result ? (result.fault ? `Impedance mismatch detected at ${result.faultDistance.toFixed(1)} m. Possible water ingress or damaged connector. Risk of radio PA thermal shutdown.` : `Feeder and connectors are healthy. Peak reflection is ${result.max.toFixed(2)} and meets the telecom standard VSWR ≤ ${RF_VSWR_LIMIT.toFixed(2)}.`) : st.cellular.fault ? "Fault scenario armed. Run the sweep to locate the impedance mismatch by distance-to-fault analysis." : "Normal scenario armed. The analyzer will sweep the selected sector's feeder and antenna."}</p><button class="rf-action" data-action="rf-ai-diagnostic">[ AI Waveform Diagnostic ]</button>${diagnostic ? `<div class="rf-ai-diagnostic ${diagnostic.fault ? "fault" : ""}" id="rf-ai-result" role="status"><strong>${diagnostic.fault ? "NEURAL RF CLASSIFIER · FAULT" : "NEURAL RF CLASSIFIER · HEALTHY"}</strong><br>${diagnostic.fault ? `Peak contrast: ${diagnostic.contrast.toFixed(1)}% above the ${RF_VSWR_LIMIT.toFixed(2)} limit` : `Headroom: ${diagnostic.headroom.toFixed(1)}% below the ${RF_VSWR_LIMIT.toFixed(2)} limit`}<br>${diagnostic.message}<small>LOCAL 601-POINT INFERENCE · ${diagnostic.discontinuities} DISCONTINUITIES · NO NETWORK OR MODEL DOWNLOAD</small></div>` : ""}<button class="rf-action" data-action="rf-inspect-master">[ Inspect Handheld Site Master ]</button></section>`;
+  return `<section class="rf-testbench" aria-label="Interactive RF Testbench"><div class="rf-testbench-head"><h3>Virtual Site Master</h3><span>VSWR + DTF · 0–60m</span></div><button class="rf-action primary" data-action="rf-run-sweep" ${running ? "disabled" : ""}>[ Run RF Cable & Antenna Sweep ]</button><button class="rf-action ${st.cellular.fault ? "fault" : ""}" data-action="rf-fault" aria-pressed="${st.cellular.fault}">[ Simulate Waterlogged Connector / Cable Kink ]</button><div class="rf-sweep-badge ${running ? "running" : result ? (result.pass ? "pass" : "fail") : ""}" data-live="rf-sweep-badge">${badge}</div><div class="rf-progress" id="rf-sweep-progress" style="--sweep-progress:${running ? "0%" : result ? "100%" : "0%"}"><span></span></div>${sweepGraph(result)}<div class="rf-cursor-readout" id="rf-cursor-readout">${result ? "Move over or tap the trace to inspect distance and VSWR." : "The interactive trace appears after the sweep."}</div><p class="rf-explanation ${result && result.fault ? "fault" : ""}">${result ? (result.fault ? `Impedance mismatch detected at ${result.faultDistance.toFixed(1)} m. Possible water ingress or damaged connector. Risk of radio PA thermal shutdown.` : `Feeder and connectors are healthy. Peak reflection is ${result.max.toFixed(2)} and meets the telecom standard VSWR ≤ ${RF_VSWR_LIMIT.toFixed(2)}.`) : st.cellular.fault ? "Fault scenario armed. Run the sweep to locate the impedance mismatch by distance-to-fault analysis." : "Normal scenario armed. The analyzer will sweep the selected sector's feeder and antenna."}</p><button class="rf-action" data-action="rf-ai-diagnostic">[ AI Waveform Diagnostic ]</button>${diagnostic ? `<div class="rf-ai-diagnostic ${diagnostic.fault ? "fault" : ""}" id="rf-ai-result" role="status"><strong>${diagnostic.fault ? "NEURAL RF CLASSIFIER · FAULT" : "NEURAL RF CLASSIFIER · HEALTHY"}</strong><br>${diagnostic.fault ? `Peak contrast: ${diagnostic.contrast.toFixed(1)}% above the ${RF_VSWR_LIMIT.toFixed(2)} limit` : `Headroom: ${diagnostic.headroom.toFixed(1)}% below the ${RF_VSWR_LIMIT.toFixed(2)} limit`}<br>${diagnostic.message}<small>LOCAL 601-POINT INFERENCE · ${diagnostic.discontinuities} DISCONTINUITIES · NO NETWORK OR MODEL DOWNLOAD</small></div>` : ""}<button class="rf-action" data-action="rf-inspect-master">[ Inspect Handheld Site Master ]</button></section>`;
 }
 
 function renderCellularSpecs() {
@@ -6875,6 +6917,108 @@ function toggleTerminal() {
     content.scrollTop = content.scrollHeight;
     scrollTerminalOutput();
   }
+}
+
+// Real measured chrome, refreshed on resize and whenever the drawer changes.
+// The camera frustum and the sheet heights are derived from these numbers
+// instead of hard-coded offsets (audit 9.4 #20).
+const chromeMetrics = { navHeight: 66, drawerHeight: 0, drawerWidth: 0, drawerLeft: 0 };
+
+function measureChrome() {
+  const nav = $("#master-nav");
+  const drawer = $("#drawer");
+  if (nav) chromeMetrics.navHeight = Math.max(48, nav.offsetHeight || 66);
+  if (drawer) {
+    const rect = drawer.getBoundingClientRect();
+    chromeMetrics.drawerHeight = rect.height;
+    chromeMetrics.drawerWidth = rect.width;
+    chromeMetrics.drawerLeft = rect.left;
+  }
+  document.documentElement.style.setProperty("--nav-h", `${chromeMetrics.navHeight}px`);
+  return chromeMetrics;
+}
+
+// How much of the viewport the drawer covers, converted into frustum shifts.
+function frustumShifts() {
+  const vw = Math.max(1, window.innerWidth);
+  const vh = Math.max(1, window.innerHeight);
+  const coveredV = clamp(chromeMetrics.drawerHeight / vh, 0, 0.9);
+  const coveredH = clamp(chromeMetrics.drawerWidth / vw, 0, 0.9);
+  // On a left-anchored desktop drawer the free area is on the right; on a
+  // phone sheet the free area is above it.
+  const leftAnchored = isDesktopViewport() && chromeMetrics.drawerLeft < vw * 0.3;
+  return {
+    vertical: leftAnchored ? 0 : clamp(coveredV * 0.5, 0, 0.34),
+    horizontal: leftAnchored ? clamp(coveredH * 0.5, 0, 0.34) : 0,
+  };
+}
+
+// How much a focused object has to be zoomed out to clear the sheet.
+function focusSizeMultiplier() {
+  return isPhoneViewport() ? 1.5 : 1.1;
+}
+
+// --- gesture hint -----------------------------------------------------------
+const GESTURE_HINT_KEY = "tower-studio.gesture-hint.v1";
+
+function gestureHintSeen() {
+  try {
+    return localStorage.getItem(GESTURE_HINT_KEY) === "dismissed";
+  } catch (_) {
+    return false;
+  }
+}
+
+function dismissGestureHint() {
+  try {
+    localStorage.setItem(GESTURE_HINT_KEY, "dismissed");
+  } catch (_) {
+    /* Storage may be unavailable. */
+  }
+  const hint = $("#gesture-hint");
+  if (hint) hint.hidden = true;
+}
+
+function updateGestureHint() {
+  const hint = $("#gesture-hint");
+  if (!hint) return;
+  hint.hidden = !(isTouchPointer() && !gestureHintSeen() && !st.heroOpen);
+}
+
+// --- bottom sheet snaps (phones only) --------------------------------------
+const SHEET_SNAPS = ["peek", "half", "full"];
+
+function setSheet(snap) {
+  if (!SHEET_SNAPS.includes(snap)) return;
+  st.sheet = snap;
+  applySheetSnap();
+}
+
+function cycleSheet() {
+  const next = SHEET_SNAPS[(SHEET_SNAPS.indexOf(st.sheet) + 1) % SHEET_SNAPS.length];
+  setSheet(next);
+  toast(`PANEL · ${next.toUpperCase()}`);
+}
+
+function applySheetSnap() {
+  const drawer = $("#drawer");
+  if (!drawer) return;
+  if (!isPhoneViewport()) {
+    drawer.removeAttribute("data-sheet");
+    return;
+  }
+  drawer.setAttribute("data-sheet", st.sheet);
+  const handle = $("#sheet-handle");
+  if (handle)
+    handle.setAttribute(
+      "aria-label",
+      st.sheet === "peek"
+        ? "Expand control panel"
+        : st.sheet === "half"
+          ? "Expand control panel fully"
+          : "Collapse control panel"
+    );
+  requestAnimationFrame(measureChrome);
 }
 
 // -------------------------------------------------------------------------
@@ -7867,7 +8011,7 @@ function applyAIConfig(config) {
   st.masterStep = 1;
   st.tab = "overview";
   st.selectedId = null;
-  st.drawerOpen = window.innerWidth > 760;
+  st.drawerOpen = !isPhoneViewport();
   st.terminal.open = false;
   launch.onAir = false;
   launch.launchedAt = 0;
@@ -8342,7 +8486,7 @@ function applyTriageChoice(choice) {
       triage.marker = marker;
       triage.cameraTarget = point.clone();
       cameraGoal.target.copy(point);
-      cameraGoal.size = window.innerWidth < 760 ? 6 : 4.5;
+      cameraGoal.size = isPhoneViewport() ? 6 : 4.5;
       cameraGoal.theta = 0.82;
       cameraGoal.phi = 0.95;
       if (reducedMotionQuery.matches) snapCameraToGoal();
@@ -8746,6 +8890,8 @@ function renderDrawer() {
     const restored = document.getElementById(activeId);
     if (restored) restored.focus({ preventScroll: true });
   }
+  applySheetSnap();
+  updateGestureHint();
   updateMenuState();
   scrollTerminalOutput();
 }
@@ -9760,7 +9906,7 @@ function enterMasterStep(step) {
     cameraGoal.target.set(structureTop.x, structureTop.y - 1.2, structureTop.z);
     cameraGoal.theta = 0.82;
     cameraGoal.phi = 0.95;
-    cameraGoal.size = window.innerWidth < 760 ? 12 : 8;
+    cameraGoal.size = isPhoneViewport() ? 12 : 8;
     updateHUD();
     renderDrawer();
   } else {
@@ -9871,7 +10017,7 @@ $("#drawer").addEventListener("click", (event) => {
     else if (value === "CELLULAR" && registry.has("rf-system")) selectComponent("rf-system");
     else {
       cameraGoal.target.set(structureTop.x, structureTop.y - 1.2, structureTop.z);
-      cameraGoal.size = window.innerWidth < 760 ? 12 : 8;
+      cameraGoal.size = isPhoneViewport() ? 12 : 8;
       renderDrawer();
     }
     toast(
@@ -9924,6 +10070,8 @@ $("#drawer").addEventListener("click", (event) => {
     toast(`LINK LOCKED · ${calculateMicrowave().rsl.toFixed(1)} dBm · 2.40 V`);
   } else if (action === "cv-restore") {
     restoreCV(value);
+  } else if (action === "dismiss-gesture-hint") {
+    dismissGestureHint();
   } else if (action === "goto-step") {
     st.lockedNotice = null;
     enterMasterStep(Number(value));
@@ -10296,14 +10444,15 @@ $("#drawer").addEventListener("change", (event) => {
   }
 });
 
-$("#drawer").addEventListener("pointermove", (event) => {
-  if (!event.target.closest || !event.target.closest("[data-rf-graph]")) return;
+// The Site Master crosshair works with a mouse and with a tap: touch devices
+// have no hover, so pointerdown measures too (audit 9.4 #28).
+function moveSweepCursor(clientX) {
   const result = st.cellular.sweeps[st.cellular.sector];
   const svg = $("#rf-sweep-graph");
   if (!result || !svg) return;
   const bounds = svg.getBoundingClientRect();
   if (!bounds.width) return;
-  const svgX = ((event.clientX - bounds.left) / bounds.width) * 640;
+  const svgX = ((clientX - bounds.left) / bounds.width) * 640;
   const distance = clamp(((svgX - 46) / 580) * 60, 0, 60);
   const point = result.points[Math.round(distance * 10)];
   const x = 46 + (point.distance / 60) * 580;
@@ -10318,12 +10467,29 @@ $("#drawer").addEventListener("pointermove", (event) => {
   cellularSim.cursorDistance = point.distance;
   $("#rf-cursor-readout").textContent =
     `DTF ${point.distance.toFixed(1)}m · VSWR ${point.vswr.toFixed(2)} · ${point.vswr <= RF_VSWR_LIMIT ? "PASS" : "HIGH REFLECTION"}`;
-});
-$("#drawer").addEventListener("pointerout", (event) => {
-  if (event.target.id !== "rf-graph-hit") return;
+}
+
+function hideSweepCursor() {
   const cursor = $("#rf-cursor");
   if (cursor) cursor.style.display = "none";
   cellularSim.cursorDistance = null;
+}
+
+$("#drawer").addEventListener("pointermove", (event) => {
+  if (!event.target.closest || !event.target.closest("[data-rf-graph]")) return;
+  moveSweepCursor(event.clientX);
+});
+$("#drawer").addEventListener("pointerdown", (event) => {
+  if (!event.target.closest || !event.target.closest("[data-rf-graph]")) return;
+  moveSweepCursor(event.clientX);
+});
+$("#drawer").addEventListener("pointerout", (event) => {
+  if (event.target.id !== "rf-graph-hit") return;
+  hideSweepCursor();
+});
+$("#drawer").addEventListener("pointerup", (event) => {
+  if (!event.target.closest || !event.target.closest("[data-rf-graph]")) return;
+  if (event.pointerType === "touch") hideSweepCursor();
 });
 
 $("#ai-architect-form").addEventListener("submit", (event) => {
@@ -10415,6 +10581,12 @@ $("#shortcuts-modal").addEventListener("click", (event) => {
     closeShortcutsModal();
 });
 
+const sheetHandle = $("#sheet-handle");
+if (sheetHandle) sheetHandle.addEventListener("click", cycleSheet);
+
+const gestureHintButton = document.querySelector('[data-action="dismiss-gesture-hint"]');
+if (gestureHintButton) gestureHintButton.addEventListener("click", dismissGestureHint);
+
 $("#terminal-toggle").addEventListener("click", toggleTerminal);
 $("#drawer-toggle").addEventListener("click", () => {
   st.drawerOpen = !st.drawerOpen;
@@ -10459,12 +10631,17 @@ function fitSite(immediate = false) {
   if (st.tower === "COW_TELESCOPIC_TRUCK") cameraGoal.size = Math.max(14, h * 0.72);
   // Reserve useful clear space above the bottom drawer. Narrow screens
   // need additional breathing room because their drawer is taller.
-  cameraGoal.size *= window.innerWidth < 760 ? 1.5 : 1.1;
+  cameraGoal.size *= focusSizeMultiplier();
   if (immediate || reducedMotionQuery.matches) snapCameraToGoal();
 }
 
 function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  // The camera framing depends on the real drawer/sheet size, so re-measure
+  // before anything reads it.
+  measureChrome();
+  applySheetSnap();
+  updateGestureHint();
   syncHUDScroll();
 }
 window.addEventListener("resize", resize);
@@ -10654,8 +10831,12 @@ function updateSelectionTag() {
     return;
   }
   tag.style.display = "block";
-  tag.style.left = `${(projected.x * 0.5 + 0.5) * window.innerWidth}px`;
-  tag.style.top = `${(-projected.y * 0.5 + 0.5) * window.innerHeight - 22}px`;
+  const tagWidth = tag.offsetWidth || 180;
+  const tagHeight = tag.offsetHeight || 34;
+  const rawLeft = (projected.x * 0.5 + 0.5) * window.innerWidth;
+  const rawTop = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+  tag.style.left = `${clamp(rawLeft, tagWidth / 2 + 8, Math.max(tagWidth / 2 + 8, window.innerWidth - tagWidth / 2 - 8))}px`;
+  tag.style.top = `${clamp(rawTop - 22, tagHeight + 8, Math.max(tagHeight + 8, window.innerHeight - tagHeight - 8))}px`;
 }
 
 const clock = new T.Clock();
@@ -10680,10 +10861,11 @@ function animate() {
   cameraCurrent.target.lerp(cameraGoal.target, ease);
   const aspect = window.innerWidth / window.innerHeight;
   const s = cameraCurrent.size;
-  const verticalShift = window.innerWidth < 760 ? 0.17 : 0.12;
-  // On wide screens the drawer is docked left, so the CAD viewport is
-  // composed to the right instead of hiding foundations behind the card.
-  const horizontalShift = window.innerWidth >= 1100 ? 0.34 : 0;
+  // Derived from the measured drawer/sheet rectangle so the tower stays in
+  // the free part of the screen at every width (audit 9.4 #20).
+  const shifts = frustumShifts();
+  const verticalShift = shifts.vertical;
+  const horizontalShift = shifts.horizontal;
   const horizontalSize = s * aspect;
   camera.left = -horizontalSize * (1 + horizontalShift);
   camera.right = horizontalSize * (1 - horizontalShift);
@@ -10809,6 +10991,17 @@ window.TowerStudio.requestProfileChange = requestProfileChange;
 window.TowerStudio.confirmProfileChange = confirmProfileChange;
 window.TowerStudio.cancelProfileChange = cancelProfileChange;
 window.TowerStudio.resetSlotsToProfile = resetSlotsToProfile;
+window.TowerStudio.isPhoneViewport = isPhoneViewport;
+window.TowerStudio.isDesktopViewport = isDesktopViewport;
+window.TowerStudio.isCompactViewport = isCompactViewport;
+window.TowerStudio.isShortLandscape = isShortLandscape;
+window.TowerStudio.isTouchPointer = isTouchPointer;
+window.TowerStudio.frustumShifts = frustumShifts;
+window.TowerStudio.measureChrome = measureChrome;
+window.TowerStudio.chromeMetrics = chromeMetrics;
+window.TowerStudio.setSheet = setSheet;
+window.TowerStudio.cycleSheet = cycleSheet;
+window.TowerStudio.focusSizeMultiplier = focusSizeMultiplier;
 window.TowerStudio.stepState = stepState;
 window.TowerStudio.stepDone = stepDone;
 window.TowerStudio.stepRequirement = stepRequirement;

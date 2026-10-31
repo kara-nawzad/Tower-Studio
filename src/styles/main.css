@@ -109,6 +109,11 @@ h1 {
 h1 span {
   color: var(--blue);
 }
+:root {
+  --nav-h: 66px;
+  --chrome-gap: 10px;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -523,6 +528,9 @@ h1 span {
   display: block;
   font: 700 13px var(--mono);
   white-space: nowrap;
+}
+.hud-cell small {
+  font-size: 8px;
 }
 .hud-cell strong.green {
   color: #047857;
@@ -1086,6 +1094,58 @@ body.hero-active .viewport-note {
   max-height: 66px;
   overflow: hidden;
 }
+.sheet-handle {
+  display: none;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+  cursor: pointer;
+}
+.sheet-grip {
+  width: 46px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.sheet-handle-text {
+  color: var(--muted);
+  font: 700 8px var(--mono);
+  letter-spacing: 0.14em;
+}
+
+.gesture-hint {
+  position: fixed;
+  z-index: 44;
+  left: 50%;
+  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  width: min(420px, calc(100vw - 24px));
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  transform: translateX(-50%);
+  border: 2px solid var(--ink);
+  background: var(--white);
+  box-shadow: 4px 4px 0 var(--ink);
+  font: 400 11px/1.5 var(--body);
+}
+.gesture-hint[hidden] {
+  display: none;
+}
+.gesture-hint-close {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 2px solid var(--ink);
+  background: var(--amber);
+  cursor: pointer;
+  font: 700 9px var(--mono);
+}
+
 .drawer-head {
   min-height: 64px;
   display: flex;
@@ -3358,7 +3418,7 @@ input[type="range"]::-moz-range-thumb {
   color: #d1fae5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 400 9px/1.55 var(--mono);
+  font: 400 11px/1.55 var(--mono);
 }
 .cli-output .command {
   color: #fde047;
@@ -3679,7 +3739,7 @@ input[type="range"]::-moz-range-thumb {
     bottom: 84px;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .topbar {
     top: calc(10px + env(safe-area-inset-top, 0px));
     left: 10px;
@@ -3710,9 +3770,6 @@ input[type="range"]::-moz-range-thumb {
     font-size: 8px;
     box-shadow: 2px 2px 0 var(--ink);
   }
-  .zoom-buttons {
-    display: none;
-  }
   .site-hud-shell {
     top: calc(62px + env(safe-area-inset-top, 0px));
     left: 10px;
@@ -3730,10 +3787,49 @@ input[type="range"]::-moz-range-thumb {
   .hud-cell strong {
     font-size: 11px;
   }
+  /* Phones: the drawer becomes a bottom sheet with three snap heights. The
+     available height is the viewport minus the top bar, the step nav and the
+     gaps — previously this was "44vh - 72px", which collapsed the panel. */
   .drawer {
-    width: calc(100vw - 20px);
-    bottom: calc(74px + env(safe-area-inset-bottom, 0px));
-    max-height: calc(44vh - 74px - env(safe-area-inset-bottom, 0px));
+    left: var(--chrome-gap);
+    right: var(--chrome-gap);
+    bottom: calc(var(--nav-h) + var(--chrome-gap) + 4px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: calc(
+      100dvh - var(--nav-h) - 118px - env(safe-area-inset-top, 0px) -
+        env(safe-area-inset-bottom, 0px)
+    );
+    transform: none;
+    border-left-width: 2px;
+    border-right-width: 2px;
+  }
+  .drawer[data-sheet="peek"] {
+    max-height: 96px;
+    overflow: hidden;
+  }
+  .drawer[data-sheet="half"] {
+    max-height: 50dvh;
+  }
+  .drawer[data-sheet="full"] {
+    max-height: calc(
+      100dvh - var(--nav-h) - 70px - env(safe-area-inset-top, 0px) -
+        env(safe-area-inset-bottom, 0px)
+    );
+  }
+  .drawer.collapsed {
+    max-height: 0;
+    border-width: 0;
+  }
+  .sheet-handle {
+    display: flex;
+  }
+  .drawer-content {
+    padding: 12px 12px 16px;
+  }
+  /* The AI bar sits above the sheet instead of under it. */
+  .ai-architect {
+    z-index: 24;
+    bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom, 0px));
   }
   .drawer-head {
     min-height: 56px;
@@ -4069,6 +4165,64 @@ input[type="range"]::-moz-range-thumb {
     transform: translate3d(0, 0, 0) scale(1);
   }
 }
+/* Very narrow phones: the rack elevation labels stack instead of clipping. */
+@media (max-width: 430px) {
+  .rack-elevation-row,
+  .slot-manager-row {
+    flex-wrap: wrap;
+  }
+  .rack-elevation-row > button,
+  .slot-manager-row > button {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .rack-slot-tag,
+  .slot-install {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .option-grid,
+  .tower-grid,
+  .mw-size-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .option-grid[style*="1fr 1fr"],
+  .option-grid[style*="repeat(3"] {
+    grid-template-columns: 1fr !important;
+  }
+  .summary-metrics,
+  .gate-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Landscape phones: keep the sheet usable when the viewport is very short. */
+@media (max-height: 450px) and (orientation: landscape) {
+  .site-hud-shell {
+    display: none;
+  }
+  .drawer {
+    left: 8px;
+    right: auto;
+    bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom, 0px));
+    width: min(420px, calc(100vw - 16px));
+    max-height: calc(100dvh - var(--nav-h) - 20px);
+  }
+  .drawer[data-sheet="half"] {
+    max-height: calc(100dvh - var(--nav-h) - 20px);
+  }
+  .ai-architect {
+    top: 8px;
+    bottom: auto;
+    right: 8px;
+    left: auto;
+    width: min(420px, calc(100vw - 16px));
+  }
+  .gesture-hint {
+    display: none;
+  }
+}
+
 @media (max-width: 390px) {
   .tower-grid {
     grid-template-columns: 1fr;

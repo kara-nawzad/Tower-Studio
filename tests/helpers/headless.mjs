@@ -103,11 +103,41 @@ export function createHeadlessStudio({ width = 1440, height = 900, guard = false
   const { window } = dom;
   window.innerWidth = width;
   window.innerHeight = height;
-  window.matchMedia = () => ({
-    matches: true,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  });
+  // jsdom has no real media engine, and a stub that always matches would make
+  // every viewport query true. Evaluate the simple queries the app actually
+  // uses against innerWidth / innerHeight.
+  window.matchMedia = (query) => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const test = String(query || "")
+      .toLowerCase()
+      .split(" and ")
+      .map((clause) => clause.trim().replace(/^[(\s]+|[)\s]+$/g, ""))
+      .map((clause) => {
+        const [rawFeature, rawValue] = clause.split(":").map((part) => part.trim());
+        const value = (rawValue || "").replace("px", "");
+        if (rawFeature === "max-width") return width <= Number(value);
+        if (rawFeature === "min-width") return width >= Number(value);
+        if (rawFeature === "max-height") return height <= Number(value);
+        if (rawFeature === "min-height") return height >= Number(value);
+        if (rawFeature === "orientation")
+          return value === "landscape" ? width >= height : height >= width;
+        // No pointer or motion model in jsdom; report the desktop defaults.
+        if (rawFeature === "pointer") return value === "fine";
+        if (rawFeature === "prefers-reduced-motion") return value === "no-preference";
+        return false;
+      });
+    return {
+      media: String(query || ""),
+      matches: test.every(Boolean),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      onchange: null,
+      dispatchEvent: () => false,
+    };
+  };
   window.requestAnimationFrame = () => 1;
   window.cancelAnimationFrame = () => {};
   window.HTMLCanvasElement.prototype.getContext = () => null;
