@@ -345,3 +345,196 @@ gh pr merge <pr-number> --merge      # or --squash / --rebase
 Before merging, the one thing worth doing first is a human look at
 `screenshots/final/` on a real phone and a real laptop, with the network
 available — that is the gap the automated pass cannot close.
+
+---
+
+# PASS 2 — DECLUTTER
+
+Pass 1 (above) made the guided flow truthful and complete. It also made it
+crowded: on a phone the top bar wrapped, the status strip scrolled sideways, the
+step subtitle pushed the first control out of the sheet, the gate strip collapsed
+to a dark sliver, and a step could open on thirty controls nothing had
+prioritised. Pass 2 is about _what the user sees first_, not about what the app
+knows. Nothing was deleted: every control still exists, in the same step, behind
+a card or behind Fine-tune.
+
+## 11. The shape of a step now
+
+A step is a short list of **decisions**. Each one is a card:
+
+| Step | 01 Site               | 02 Cabinet        | 03 Power       | 04A Backhaul     | 04B Sectors     | 05 Go on air      |
+| ---- | --------------------- | ----------------- | -------------- | ---------------- | --------------- | ----------------- |
+| 1    | Environment           | Equipment profile | Power source   | Link type        | Sector          | Gates + go on air |
+| 2    | Tower (+ hidden line) | Cabinet type      | Backup battery | Dish size & band | Aim             | CLI terminal      |
+| 3    | Height                | Check the cabinet | Test it        | Aim              | Check the cable | —                 |
+| 4    | _Fine-tune_           | _Fine-tune_       | _Fine-tune_    | _Fine-tune_      | _Fine-tune_     | _Fine-tune_       |
+
+- **Guided**: exactly one card is open, the first unfinished one, chosen when the
+  step is entered. A card that has been answered folds to one summary line plus
+  an `EDIT` state chip. Closed card bodies stay in the DOM with `hidden`, so
+  nothing is lost and `window.TowerStudio` can still reach every control.
+- **Engineer**: every card and Fine-tune are open in one scroll — the old wall of
+  controls, unchanged, for the people who asked for it.
+- **Continue** at the end of each step is the only navigation inside the sheet.
+- "Use recommended" appears on Step 03 (auto N+1 + the Standard bank) and Step
+  04A (peak the dish), says "Recommended settings applied" and offers `[ UNDO ]`.
+  It is an ordinary history transaction, so `Ctrl/⌘+Z` reverts it too.
+
+The measured effect on how many controls a Guided step opens with (counted as
+buttons, selects, checkboxes and sliders inside the sheet, excluding closed
+cards, closed `<details>` and the inline glossary buttons):
+
+| Step                  | Before | After | Target |
+| --------------------- | -----: | ----: | -----: |
+| 01 Site (first run)   |     12 | **8** |   ≤ 10 |
+| 01 Site (established) |     15 | **9** |   ≤ 10 |
+| 02 Cabinet            |     58 | **7** |   ≤ 10 |
+| 03 Power              |     14 | **8** |   ≤ 10 |
+| 04A Backhaul          |     22 | **9** |   ≤ 10 |
+| 04B Sectors           |     17 | **9** |   ≤ 10 |
+| 05 Go on air          |     19 | **4** |   ≤ 10 |
+
+(`tests/pass2-phone.test.mjs` → "C1"; the "before" column was produced by running
+the same counter against a worktree of `04a9e2d`.)
+
+## 12. Phone (≤ 767 px)
+
+- **One-row top bar**: logo + one-line wordmark + `TERMINAL` + `⋮`. Hero, AI
+  Build, Fit, Detail level, Undo/Redo, Save/Open/Start fresh and Shortcuts all
+  live in the menu.
+- **Status chip**: the strip is one line, `LIVE MODEL · Rural · 4-leg 56 m ·
+6.3 kW` — the first three cells of the same step-aware data. Tapping it opens
+  "All numbers" (24 cells, no horizontal scroll, one column); tapping outside or
+  Escape closes it.
+- **Sheet**: opens at `40dvh` on step entry, so the header and the first decision
+  card are both visible. Snap states are peek (44 px grab bar), half (40dvh) and
+  full (`100dvh` minus chrome). A collapsed sheet keeps its 44 px grab bar.
+- **Header**: step number + title only. The subtitle returns only while a 3D
+  object is being inspected.
+- **Floating stack**: zoom in / zoom out / fit, 44 px, vertical, bottom-right of
+  the 3D area, `--sheet-h` above the sheet at every snap. At full height there is
+  no 3D area left, so the stack stands down instead of floating over the panel.
+- **AI Architect**: menu-only, opened as a dialog over the scene with a scrim,
+  a close button and Escape (Escape works even with the caret in its input).
+- **Decision**: the gate strip is **six labelled dots in one row** (CIVIL · EARTH
+  · POWER · LINK · RF · ALARMS, each with a drawn dot and PASS/OPEN underneath),
+  not the "3/6 ready" chip. It is 44 px tall in the panel header and can never
+  collapse: it is one `repeat(6, minmax(0, 1fr))` grid row with `min-height:
+var(--tap)`. Each gate is a button that jumps to the step that fixes it.
+
+## 13. Laptop (≥ 1024 px) and the addendum
+
+- **One-row top bar**: logo + wordmark + `LIVE MODEL` chip + Undo/Redo +
+  `TERMINAL` + `⋮`. The eyebrow ("INTERACTIVE 3D ENGINEERING SUITE") appears only
+  from 1280 px.
+- **Step-aware strip**: 4–5 cells, no scrollbar and no arrows, plus "All numbers".
+
+  | Step | Cells                                                      |
+  | ---- | ---------------------------------------------------------- |
+  | 01   | Environment · Structure · Civil check · Earth resistance   |
+  | 02   | Cabinet · Cabinet DC load · Backhaul speed · Live services |
+  | 03   | AC source · Total load · Backup hours · Rectifier N+1      |
+  | 04A  | Microwave RSL · Fade margin · Backhaul speed · Link status |
+  | 04B  | Cellular 3G · Sector status · Last sweep VSWR · Throughput |
+  | 05   | Gates passed · Site status · Active alarms                 |
+
+- **Panel**: a full-height left side panel from 1024 px — below the strip, above
+  the step bar, `clamp(420px, 32vw, 500px)` wide, one internal scroll. Header:
+  step number, title, the six-gate strip, collapse button. Collapsed, a 44 px
+  vertical `CONTROLS` tab reopens it. 768–1023 px get the same sheet as a phone,
+  centred and capped at 720 px.
+- **Step bar**: 44–48 px tall (max 52), five equal columns, short labels on
+  phones ("Cabinet", "Aim", "Air") and long labels from 1024 px ("Open cabinet",
+  "Aim & Connect", "Go on air"), each with a drawn done / to-do / locked mark.
+- **Hint**: shown once, dismissible, remembered in
+  `tower-studio.gesture-hint.v1`; afterwards the same sentence is listed in
+  Shortcuts & help.
+- **Camera**: the frustum offsets still come from the measured panel
+  (`chromeMetrics.drawerWidth/drawerHeight/drawerLeft`), re-measured on every
+  resize and on every sheet snap.
+
+## 14. Measured layout
+
+There is **no browser binary in this sandbox** (no Chromium, no Playwright
+browser download available), so the C2 captures and the L10 screenshots could
+not be produced. What is reported instead is the bounding-box arithmetic the
+interface is positioned from: `window.TowerStudio.chromeLayout(width, height)`
+computes every fixed box from the same `--topbar-* / --hud-* / --nav-* /
+--view-* / --panel-* / --sheet-*` tokens the stylesheet uses, and the tests
+assert (a) that the stylesheet tokens and the arithmetic agree number for
+number, (b) that no two boxes intersect, (c) that every box is inside the
+viewport, and (d) the share of the window left to the 3D scene.
+
+Share of the window **not covered by any chrome**, and intersecting box pairs:
+
+| Window    | peek | half | full | side panel |
+| --------- | ---- | ---- | ---- | ---------- |
+| 360×800   | 82 % | 49 % | 14 % | —          |
+| 390×844   | 83 % | 49 % | 13 % | —          |
+| 430×932   | 84 % | 50 % | 12 % | —          |
+| 768×1024  | 83 % | 49 % | 10 % | —          |
+| 1024×768  | —    | —    | —    | 53 %       |
+| 1280×800  | —    | —    | —    | 62 %       |
+| 1366×768  | —    | —    | —    | **62 %**   |
+| 1440×900  | —    | —    | —    | 64 %       |
+| 1920×1080 | —    | —    | —    | 70 %       |
+
+- Every one of those windows reports **0 intersecting pairs** (top bar and its
+  own children excluded, because a chip inside a bar is not an overlap).
+- The phone asks for ≥ 35 % at half and ≥ 70 % at peek: measured 49 % and 82 %.
+- The laptop asks for ≥ 50 % free at 1366×768 Guided: measured 62 %.
+- L10's full matrix — widths 1024/1280/1366/1440/1920 × heights 720/768/900/1080
+  (20 windows), with the panel open and collapsed — is asserted in
+  `tests/pass2-laptop.test.mjs` and reports no overlaps and ≥ 40 % free
+  everywhere.
+- Type: no rule in the stylesheet asks for a font size below **11 px** any more
+  (the file has 907 rules; the pass-1 notes recorded 95 text leaves under 11 px
+  at 390 px). Sentences — `.control-note`, `.card-note`, `.decision-summary`,
+  `.gesture-hint`, `.onboarding-hint`, the drawer subtitle — are 12 px. The
+  decorative allowlist for this rule is **empty**: there is no selector left that
+  needs an exemption, because the drawn marks (gate dot, step-chip status dot,
+  sheet grip) are sized with `width`/`height`, not with type. jsdom does not apply
+  the cascade to `getComputedStyle().fontSize`, so this is a static scan of every
+  rule rather than a computed scan; that is stricter, not weaker.
+- `jsdom has no layout engine`, so the two things it cannot prove are stated
+  rather than implied: the sheet's real pixel height and the browser's own text
+  wrapping. The arithmetic and the stylesheet agree on the tokens; a human should
+  still look at a real phone.
+
+## 15. What was not verified (pass 2)
+
+1. **No screenshots.** No browser binary is available in this environment, so
+   `screenshots/` was not regenerated and nobody — human or model — looked at a
+   rendered frame of pass 2. Every claim above is a measurement of the layout
+   arithmetic or of the DOM/CSS text.
+2. **Real text metrics.** The arithmetic uses approximate advance widths (Barlow
+   Condensed ≈ 0.5 em, Space Mono ≈ 0.6 em) for the wordmark and the buttons.
+   With the real webfonts loaded the top bar will be a few pixels narrower or
+   wider; the 360 px case has ~65 px of slack.
+3. **Touch, momentum scrolling, safe-area insets and the iOS URL bar** were not
+   exercised. Safe areas are honoured in CSS (`env(safe-area-inset-*)`), but on
+   a device this is untested.
+4. **The 3D camera offsets** are still only checked as arithmetic: the panel is
+   re-measured with `getBoundingClientRect`, which jsdom cannot answer, so the
+   `--sheet-h` value in a headless run is 0.
+
+## 16. Decisions taken without asking (pass 2)
+
+- **Gate strip = six labelled dots**, the first of the two options in A6. It
+  keeps the six gates permanently visible, keeps the pass/fail vocabulary
+  ("PASS"/"OPEN") that the Phase 3 tests guard, and needs no extra tap to answer
+  "how ready am I?".
+- **Guided uses dropdowns** where a card would otherwise hold five or more pills
+  (vendor, generation, link type, dish size, band, sector). The Engineer level
+  keeps the button grids. Both routes fire the same action, so the site model is
+  untouched.
+- **The `<select>`s dispatch through a throw-away button** that carries the same
+  `data-action` a real button would: one implementation of every state change,
+  one place where history is recorded, so a dropdown can never drift from its
+  button.
+- **"Nothing is removed" is literal**: a closed card is still in the DOM (hidden),
+  every `data-action` still renders, and the Engineer level shows the entire
+  control surface in one scroll.
+- **The battery presets only map to option pairs the app already had**
+  (1×100, 2×150, 4×200 Ah); the default site still loads the Extended bank, so
+  no default number moved.

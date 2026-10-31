@@ -5367,3 +5367,96 @@ h1 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* ===================== laptop: full-height side panel ================= */
+@media (min-width: 1024px) {
+  :root {
+    --topbar-top: 10px;
+    --topbar-h: 44px;
+    --hud-top: 62px;
+    --hud-h: 40px;
+    --nav-h: 48px;
+  }
+  .undo-redo {
+    display: grid;
+  }
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+  }
+  h1 {
+    font-size: 28px;
+  }
+  .step-name {
+    display: none;
+  }
+  .step-name-wide {
+    display: block;
+  }
+  .drawer {
+    left: var(--chrome-gap);
+    top: var(--panel-top);
+    bottom: var(--panel-bottom);
+    width: clamp(var(--panel-min), var(--panel-vw), var(--panel-max));
+    height: auto;
+    max-height: none;
+    transform: none;
+  }
+  .drawer[data-sheet] {
+    height: auto;
+    max-height: none;
+  }
+  .drawer.collapsed {
+    width: 0;
+    height: auto;
+    max-height: none;
+    border-width: 0;
+    box-shadow: none;
+    overflow: hidden;
+  }
+  .drawer.collapsed + .panel-tab {
+    display: flex;
+  }
+  .panel-tab {
+    top: var(--panel-top);
+  }
+  .drawer-gates {
+    flex: none;
+  }
+  .drawer-head {
+    flex: none;
+  }
+  .drawer-content {
+    padding: 12px;
+  }
+  .gate small {
+    font-size: 11px;
+  }
+  .ai-architect {
+    left: calc(
+      var(--chrome-gap) + clamp(var(--panel-min), var(--panel-vw), var(--panel-max)) + 12px
+    );
+    right: calc(var(--chrome-gap) + var(--view-btn) + 10px);
+    width: auto;
+    transform: none;
+  }
+  .gesture-hint {
+    right: calc(var(--chrome-gap) + var(--view-btn) + 10px);
+  }
+}
+
+/* Wordmark eyebrow: only when there is room for it. */
+@media (min-width: 1280px) {
+  .eyebrow {
+    display: block;
+  }
+  h1 {
+    margin-top: 2px;
+  }
+}
+
+/* The step bar never takes more than 52px. */
+.master-nav {
+  max-height: 52px;
+}
