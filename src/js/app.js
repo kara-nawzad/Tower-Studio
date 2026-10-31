@@ -3247,7 +3247,7 @@ function rackLabelMaterial(text, dark = true) {
   context.fillStyle = dark ? "#0F172A" : "#F8FAFC";
   context.fillRect(0, 0, 768, 128);
   context.fillStyle = dark ? "#F8FAFC" : "#0F172A";
-  context.font = "700 43px monospace";
+  context.font = "700 43px 'Space Mono', monospace";
   context.textAlign = "center";
   context.textBaseline = "middle";
   const fitted = text.length > 30 ? text.slice(0, 30) : text;
@@ -4914,7 +4914,6 @@ function selectComponent(id, focus = true) {
     st.masterStep = 4;
     st.microwave.system = "CELLULAR";
     if (Number.isInteger(selected.data.sector)) st.cellular.sector = selected.data.sector;
-    stopMicrowaveAudio();
   } else if (selected.data.domain === "microwave") {
     st.onboarding.active = false;
     st.masterStep = 4;
@@ -5032,8 +5031,10 @@ const escapeHTML = (value) =>
     (character) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]
   );
+// The tick and the cross are drawn in CSS, not typed as glyphs, so no badge
+// ever falls back to a system font (audit follow-up: one typeface set only).
 const badge = (pass, passText = "PASS", failText = "FAIL") =>
-  `<span class="badge ${pass ? "pass" : "fail"}">${pass ? "✓" : "×"} ${pass ? passText : failText}</span>`;
+  `<span class="badge ${pass ? "pass" : "fail"}"><i class="mark ${pass ? "mark-ok" : "mark-no"}" aria-hidden="true"></i>${pass ? passText : failText}</span>`;
 
 function codeSnippet() {
   const calc = calculateEngineering();
@@ -5417,7 +5418,7 @@ function renderPowerLiveGrid() {
 
 function renderPowerAlarms() {
   const alarms = powerAlarms();
-  return `<div class="alarm-strip ${alarms.length ? "" : "clear"}"><span>${alarms.length ? "⚠" : "✓"}</span><span data-live="alarm-text">${alarms.length ? alarms.map((alarm) => `${alarm.severity}: ${alarm.label}`).join(" · ") : "NO ACTIVE POWER ALARMS"}</span></div>`;
+  return `<div class="alarm-strip ${alarms.length ? "" : "clear"}"><span><i class="mark ${alarms.length ? "mark-warn" : "mark-ok"}" aria-hidden="true"></i></span><span data-live="alarm-text">${alarms.length ? alarms.map((alarm) => `${alarm.severity}: ${alarm.label}`).join(" · ") : "NO ACTIVE POWER ALARMS"}</span></div>`;
 }
 
 function renderPowerActions() {
@@ -5732,7 +5733,7 @@ function renderSmartFilter(context) {
         )
           .map(([genKey, item]) => {
             const checked = custom.gens.includes(genKey);
-            return `<button type="button" class="custom-gen-chip ${checked ? "active" : ""}" data-action="custom-gen-toggle" data-value="${genKey}" aria-pressed="${checked}">[${checked ? "✓" : "&nbsp;"}] ${item.chip}</button>`;
+            return `<button type="button" class="custom-gen-chip ${checked ? "active" : ""}" data-action="custom-gen-toggle" data-value="${genKey}" aria-pressed="${checked}">[${checked ? `<i class="mark mark-ok" aria-hidden="true"></i>` : "&nbsp;"}] ${item.chip}</button>`;
           })
           .join("")}</div></div>`
       : "";
@@ -6044,7 +6045,7 @@ function selectedMicrowaveKind() {
 }
 
 function renderMwSystemToggle() {
-  return `<div class="mw-system-toggle" role="group" aria-label="Transmission system"><button data-action="mw-system" data-value="MICROWAVE" class="${st.microwave.system === "MICROWAVE" ? "active" : ""}">[ 🎯 Microwave Backhaul ]</button><button data-action="mw-system" data-value="CELLULAR" class="${st.microwave.system === "CELLULAR" ? "active" : ""}">[ 📡 Cellular Sectors ]</button></div>`;
+  return `<div class="mw-system-toggle" role="group" aria-label="Transmission system"><button data-action="mw-system" data-value="MICROWAVE" class="${st.microwave.system === "MICROWAVE" ? "active" : ""}">[ Microwave Backhaul ]</button><button data-action="mw-system" data-value="CELLULAR" class="${st.microwave.system === "CELLULAR" ? "active" : ""}">[ Cellular Sectors ]</button></div>`;
 }
 
 function renderMwMetrics() {
@@ -6471,7 +6472,7 @@ function renderTerminal() {
           `<button type="button" data-action="cli-command" data-value="${escapeHTML(command)}">${escapeHTML(command)}</button>`
       )
       .join("")}</div>
-    <button type="button" class="cli-copilot" data-action="ai-copilot">✨ AI Copilot · diagnose root cause</button>
+    <button type="button" class="cli-copilot" data-action="ai-copilot">[ AI Copilot · diagnose root cause ]</button>
     ${triage.active ? `<div class="triage-analysis" id="triage-analysis">${escapeHTML(triage.report)}${triage.curve ? triageCurveSVG() : ""}</div><div class="triage-options" aria-label="Guided NOC remediation choices">${triage.options.map((option) => `<button type="button" class="triage-choice" data-action="triage-choice" data-value="${option.id}">${option.id}. ${option.label}</button>`).join("")}</div>` : ""}
     <div class="cli-output" id="cli-output" role="log" aria-live="polite" aria-label="Terminal output">${lines}</div>
     <form class="cli-form" id="cli-form" autocomplete="off"><div class="cli-input-wrap"><span class="cli-prompt">${escapeHTML(cliPrompt())}</span><input class="cli-input" id="cli-input" name="command" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="CLI command input" placeholder="Type a command"></div><button class="cli-submit" type="submit">RUN</button></form>
@@ -6765,7 +6766,7 @@ function executeCLI(command, render = true) {
 function renderAcceptancePanel() {
   const audit = calculateAcceptance();
   const passed = audit.checks.filter((check) => check.pass).length;
-  return `<section class="acceptance-panel" aria-label="Carrier Site Acceptance Audit"><div class="acceptance-head"><div><h3>Carrier Site Acceptance Audit</h3><p>Pages 194–195 · live pre-flight punch-list</p></div><span class="acceptance-score ${audit.pass ? "pass" : "fail"}" id="acceptance-score">${passed}/6 ${audit.pass ? "ACCEPT" : "HOLD"}</span></div>${audit.checks.map((check) => `<article class="acceptance-item ${check.pass ? "pass" : "fail"}" data-audit="${check.id}"><span class="acceptance-icon">${check.pass ? "✓" : "✗"}</span><div class="acceptance-copy"><strong>${check.title}</strong><small>${check.value}</small><div class="acceptance-explanation">${check.explanation}</div></div></article>`).join("")}</section>`;
+  return `<section class="acceptance-panel" aria-label="Carrier Site Acceptance Audit"><div class="acceptance-head"><div><h3>Carrier Site Acceptance Audit</h3><p>Pages 194–195 · live pre-flight punch-list</p></div><span class="acceptance-score ${audit.pass ? "pass" : "fail"}" id="acceptance-score">${passed}/6 ${audit.pass ? "ACCEPT" : "HOLD"}</span></div>${audit.checks.map((check) => `<article class="acceptance-item ${check.pass ? "pass" : "fail"}" data-audit="${check.id}"><span class="acceptance-icon"><i class="mark ${check.pass ? "mark-ok" : "mark-no"}" aria-hidden="true"></i></span><div class="acceptance-copy"><strong>${check.title}</strong><small>${check.value}</small><div class="acceptance-explanation">${check.explanation}</div></div></article>`).join("")}</section>`;
 }
 
 function renderPhase6Overview() {
@@ -6859,7 +6860,8 @@ function updateAcceptanceLive() {
     if (!item) return;
     item.classList.toggle("pass", check.pass);
     item.classList.toggle("fail", !check.pass);
-    item.querySelector(".acceptance-icon").textContent = check.pass ? "✓" : "✗";
+    const icon = item.querySelector(".acceptance-icon .mark");
+    if (icon) icon.className = `mark ${check.pass ? "mark-ok" : "mark-no"}`;
     item.querySelector(".acceptance-copy small").textContent = check.value;
     item.querySelector(".acceptance-explanation").textContent = check.explanation;
   });
@@ -6895,7 +6897,6 @@ function goOnAir(preserveStep = false) {
     setAIBuildStatus("[ ON AIR — OPERATIONAL ] · ACCEPTANCE RESTORED");
     syncAIArchitect();
   }
-  playFrequencyLockChime();
   updateCellularVisuals(performance.now());
   updateMicrowaveVisuals(performance.now());
   updateLaunchVisuals(performance.now());
@@ -8399,7 +8400,6 @@ function applyTriageChoice(choice) {
       powerSim.gridVoltage = 0;
       powerSim.eventStart = now;
     }
-    playContactor();
     triage.report = "GENERATOR 1 CRANKING · EXHAUST ACTIVE · ATS TRANSFER SEQUENCE ARMED";
     updatePowerVisuals(now, 0, calculatePower());
     updateHUD();
@@ -9228,95 +9228,6 @@ async function copyCode() {
   }
 }
 
-let powerAudio = null;
-function playContactor() {
-  try {
-    powerAudio = powerAudio || new (window.AudioContext || window.webkitAudioContext)();
-    const now = powerAudio.currentTime;
-    [0, 0.075].forEach((offset, i) => {
-      const oscillator = powerAudio.createOscillator();
-      const gain = powerAudio.createGain();
-      oscillator.type = "square";
-      oscillator.frequency.value = i ? 95 : 145;
-      gain.gain.setValueAtTime(0.035, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.045);
-      oscillator.connect(gain);
-      gain.connect(powerAudio.destination);
-      oscillator.start(now + offset);
-      oscillator.stop(now + offset + 0.05);
-    });
-  } catch (_) {
-    /* Audio is optional when a browser blocks Web Audio. */
-  }
-}
-
-function playFrequencyLockChime() {
-  try {
-    powerAudio = powerAudio || new (window.AudioContext || window.webkitAudioContext)();
-    if (powerAudio.state === "suspended") powerAudio.resume().catch(() => {});
-    const now = powerAudio.currentTime;
-    [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => {
-      const oscillator = powerAudio.createOscillator();
-      const gain = powerAudio.createGain();
-      const start = now + index * 0.085;
-      oscillator.type = index === 3 ? "sine" : "triangle";
-      oscillator.frequency.setValueAtTime(frequency, start);
-      oscillator.frequency.exponentialRampToValueAtTime(frequency * 1.012, start + 0.18);
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.045, start + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
-      oscillator.connect(gain);
-      gain.connect(powerAudio.destination);
-      oscillator.onended = () => {
-        oscillator.disconnect();
-        gain.disconnect();
-      };
-      oscillator.start(start);
-      oscillator.stop(start + 0.23);
-    });
-  } catch (_) {
-    /* The celebration remains visual when Web Audio is unavailable. */
-  }
-}
-
-let microwaveOscillator = null;
-let microwaveToneGain = null;
-let microwaveToneTimer = 0;
-function updateMicrowaveTone() {
-  try {
-    powerAudio = powerAudio || new (window.AudioContext || window.webkitAudioContext)();
-    if (powerAudio.state === "suspended") powerAudio.resume().catch(() => {});
-    const now = powerAudio.currentTime;
-    if (!microwaveOscillator) {
-      microwaveOscillator = powerAudio.createOscillator();
-      microwaveToneGain = powerAudio.createGain();
-      microwaveOscillator.type = "sine";
-      microwaveToneGain.gain.value = 0.0001;
-      microwaveOscillator.connect(microwaveToneGain);
-      microwaveToneGain.connect(powerAudio.destination);
-      microwaveOscillator.start();
-    }
-    const voltage = calculateMicrowave().voltage;
-    microwaveOscillator.frequency.setTargetAtTime(320 + voltage * 320, now, 0.018);
-    microwaveToneGain.gain.cancelScheduledValues(now);
-    microwaveToneGain.gain.setTargetAtTime(0.012, now, 0.012);
-    clearTimeout(microwaveToneTimer);
-    microwaveToneTimer = setTimeout(stopMicrowaveAudio, 850);
-  } catch (_) {
-    /* Alignment audio is optional when Web Audio is unavailable. */
-  }
-}
-
-function stopMicrowaveAudio() {
-  clearTimeout(microwaveToneTimer);
-  if (!powerAudio || !microwaveToneGain) return;
-  try {
-    microwaveToneGain.gain.setTargetAtTime(0.0001, powerAudio.currentTime, 0.035);
-  } catch (_) {
-    /* The audio context may already be closed. */
-  }
-}
-
 function resetPowerSimulation() {
   const now = performance.now();
   powerSim.eventStart = 0;
@@ -9341,7 +9252,6 @@ function startBlackout() {
   powerSim.gridVoltage = 0;
   powerSim.eventStart = performance.now();
   powerSim.generatorCooldownUntil = 0;
-  playContactor();
   toast("LOSS OF MAINS · DC BUS ON BATTERY · 0.000 ms");
   renderDrawer();
   updateHUD();
@@ -9353,7 +9263,6 @@ function restoreGrid() {
   powerSim.activeSource = "GRID";
   powerSim.eventStart = 0;
   powerSim.generatorCooldownUntil = performance.now() + 5000;
-  playContactor();
   toast("UTILITY RESTORED · ATS ON GRID · GENERATOR COOLDOWN");
   renderDrawer();
   updateHUD();
@@ -9701,7 +9610,6 @@ function updatePowerSimulation(now, dt) {
     const source = rotation ? "GEN2" : "GEN1";
     if (powerSim.activeSource !== source) {
       powerSim.activeSource = source;
-      playContactor();
       toast(`12-HOUR ROTATION · ${sourceLabel(source)} NOW ONLINE`);
       renderDrawer();
     }
@@ -9713,7 +9621,6 @@ function updatePowerSimulation(now, dt) {
       if (elapsed >= 15) {
         powerSim.phase = "GENERATOR";
         powerSim.activeSource = "GEN1";
-        playContactor();
         toast("GENERATOR STABLE · ATS TRANSFERRED TO GEN 1");
         renderDrawer();
       }
@@ -10087,7 +9994,6 @@ function enterMasterStep(step) {
   if (st.heroOpen) setHeroOpen(false);
   if (step > 1) st.onboarding.active = false;
   const previousStep = st.masterStep;
-  if (step !== 4) stopMicrowaveAudio();
   st.masterStep = step;
   st.drawerOpen = true;
   st.tab = "overview";
@@ -10219,7 +10125,6 @@ $("#drawer").addEventListener("click", (event) => {
   } else if (action === "mw-system" && ["MICROWAVE", "CELLULAR"].includes(value)) {
     st.microwave.system = value;
     st.selectedId = null;
-    if (value === "CELLULAR") stopMicrowaveAudio();
     rebuildSite();
     if (value === "MICROWAVE" && registry.has("mw-system")) selectComponent("mw-system");
     else if (value === "CELLULAR" && registry.has("rf-system")) selectComponent("rf-system");
@@ -10274,7 +10179,6 @@ $("#drawer").addEventListener("click", (event) => {
     updateMicrowaveVisuals(performance.now());
     updateLiveReadouts();
     updateHUD();
-    updateMicrowaveTone();
     toast(`LINK LOCKED · ${calculateMicrowave().rsl.toFixed(1)} dBm · 2.40 V`);
   } else if (action === "cv-restore") {
     restoreCV(value);
@@ -10396,7 +10300,6 @@ $("#drawer").addEventListener("click", (event) => {
     rackSim.patchStarted = performance.now();
     rackSim.patchCompletedNotified = false;
     rackSim.doorTarget = 1;
-    playContactor();
     toast("PATCHING YELLOW ETHERNET · ROUTER PORT 2 → TDM PORT 1B");
     renderDrawer();
   } else if (action === "rack-trace") {
@@ -10434,7 +10337,6 @@ $("#drawer").addEventListener("click", (event) => {
   } else if (action === "test-failover") {
     powerSim.failedRectifier = powerSim.failedRectifier === null ? 0 : null;
     const failover = calculatePower();
-    playContactor();
     toast(
       powerSim.failedRectifier === null
         ? "RECTIFIER MODULE RESTORED"
@@ -10515,7 +10417,6 @@ $("#drawer").addEventListener("input", (event) => {
     updateMicrowaveVisuals(performance.now());
     updateLiveReadouts();
     updateHUD();
-    updateMicrowaveTone();
     return;
   }
   if (microwaveInput === "spacing") {
