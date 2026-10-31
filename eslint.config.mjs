@@ -3,7 +3,9 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["node_modules/**", "dist/**", "build/**", "coverage/**"],
+    // vendor/three.min.js is an unmodified third-party build; it is not ours
+    // to lint (its licence is in vendor/THREE-LICENSE.txt).
+    ignores: ["node_modules/**", "dist/**", "build/**", "coverage/**", "vendor/**"],
   },
   js.configs.recommended,
   {

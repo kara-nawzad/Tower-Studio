@@ -2,56 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { JSDOM } from "jsdom";
 import * as THREE from "three";
 import { createStaticServer } from "../scripts/dev-server.mjs";
-
-const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function createHeadlessStudio({ width = 1440, height = 900 } = {}) {
-  const html = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
-  const appJs = fs.readFileSync(path.join(ROOT_DIR, "src/js/app.js"), "utf8");
-
-  const dom = new JSDOM(html, {
-    url: "http://localhost:3000/",
-    runScripts: "outside-only",
-    pretendToBeVisual: true,
-  });
-
-  const { window } = dom;
-  window.innerWidth = width;
-  window.innerHeight = height;
-  window.matchMedia = () => ({
-    matches: true,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  });
-  window.requestAnimationFrame = () => 1;
-  window.cancelAnimationFrame = () => {};
-  window.HTMLCanvasElement.prototype.getContext = () => null;
-  window.HTMLElement.prototype.scrollBy = function scrollBy(opts) {
-    if (typeof opts === "object" && opts !== null) {
-      this.scrollLeft = (this.scrollLeft || 0) + (opts.left || 0);
-    }
-  };
-
-  class MockWebGLRenderer {
-    constructor() {
-      this.shadowMap = { enabled: false, type: null, autoUpdate: false, needsUpdate: false };
-      this.outputEncoding = null;
-    }
-    setPixelRatio() {}
-    setSize() {}
-    render() {}
-    dispose() {}
-  }
-
-  window.THREE = { ...THREE, WebGLRenderer: MockWebGLRenderer };
-  window.eval(appJs);
-
-  return { dom, window, document: window.document, studio: window.TowerStudio };
-}
+import { ROOT_DIR, createHeadlessStudio } from "./helpers/headless.mjs";
 
 test("project structure contains entry HTML, separated CSS/JS, docs, assets, and scripts", () => {
   const expectedPaths = [
@@ -125,11 +78,11 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   // Calm top HUD in setup mode (no 10 alarming red/green telemetry cells on initial load)
   const livePill = document.getElementById("live-pill");
   assert.equal(livePill.classList.contains("setup"), true);
-  assert.equal(livePill.textContent.trim(), "NEW SITE SETUP");
+  assert.equal(livePill.textContent.trim(), "SETTING UP");
 
   const hud = document.getElementById("site-hud");
   assert.equal(hud.classList.contains("is-setup"), true);
-  assert.match(hud.textContent, /\[\s*Setting Up Site\.\.\.\s*\]/);
+  assert.match(hud.textContent, /\[\s*Setting up\s*\]/);
   assert.equal(hud.querySelectorAll(".hud-cell.red, .hud-cell strong.red").length, 0);
   assert.equal(hud.querySelectorAll(".hud-cell").length, 4);
 
@@ -161,9 +114,10 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   assert.equal(studio.state.onboarding.active, false);
   assert.equal(studio.state.masterStep, 2);
   assert.equal(studio.state.tab, "configure");
-  assert.equal(tabsBar.hidden, false);
+  // Phase 3: the three tabs are gone; every step is one scrolling panel.
+  assert.equal(tabsBar.hidden, true);
   assert.equal(hud.classList.contains("is-setup"), false);
-  assert.equal(hud.querySelectorAll(".hud-cell").length, 10);
+  assert.equal(hud.querySelectorAll(".hud-cell").length, 11);
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="ERICSSON"]'));
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="HUAWEI"]'));
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="NOKIA"]'));
@@ -217,7 +171,7 @@ test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD 
   assert.equal(studio.state.rack.slots.baseband, true, "Baseband 6630 active for 4G");
   assert.equal(studio.customGenerationMetrics().throughput, "342 Mbps");
   assert.equal(studio.customGenerationMetrics().backhaulMbps, 600);
-  assert.match(studio.smartProfile().chassis, /DUW 30 \+ Baseband 6630/);
+  assert.match(studio.smartProfile().chassis, /DUW 30 digital unit \(WCDMA\) \+ Baseband 6630/);
 
   const hudText3g4g = document.getElementById("site-hud").textContent;
   assert.match(hudText3g4g, /Cellular 3G\+4G342 Mbps/);
@@ -384,17 +338,30 @@ test("application executes full Phases 01–07 simulation, RF sweep classifier, 
   const power = studio.calculatePower();
   assert.equal(typeof power.autonomy, "number");
 
-  // Verify master workflow steps 1 through 5
+  // Verify master workflow steps 1 through 5. Guided mode gates the later
+  // steps, so the walkthrough runs in engineer mode.
+  studio.setDetailLevel("ENGINEER");
   for (const step of [1, 2, 3, 4, 5]) {
-    studio.enterMasterStep(step);
+    assert.equal(studio.enterMasterStep(step), true);
     assert.equal(studio.state.masterStep, step);
   }
+  studio.setDetailLevel("GUIDED");
 
-  // Verify Phase 05 sweep + Phase 07 RF waveform classifier
+  // Verify Phase 05 sweep + Phase 07 RF waveform classifier.
+  // The classifier is honest: peak VSWR, fault distance and the confidence-like
+  // figure are all derived from the sweep, never hard-coded.
   const sweep = studio.calculateSweep(0);
   const diagnosis = studio.classifyRFWaveform(sweep);
   assert.equal(diagnosis.fault, false);
-  assert.equal(diagnosis.confidence, 99.1);
+  assert.equal(diagnosis.distance, null);
+  assert.equal(diagnosis.vswr, Number(sweep.max.toFixed(2)));
+  assert.ok(diagnosis.headroom > 0 && diagnosis.headroom < 100);
+  assert.equal(diagnosis.confidence, diagnosis.headroom);
+  assert.equal(
+    diagnosis.headroom,
+    Number((((1.32 - sweep.max) / 1.32) * 100).toFixed(1)),
+    "Headroom must be derived from the measured peak VSWR"
+  );
 
   // Verify Phase 06 CLI + Phase 07 AI Architect parser & NOC Copilot
   const cliOut = studio.executeCLI("lt all");

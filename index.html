@@ -17,15 +17,59 @@
     <section class="hero-tab" id="hero-tab" aria-label="Telecom Tower Installation Simulator hero">
       <div class="hero-stage" id="hero-stage">
         <div class="hero-artwork" id="hero-artwork">
-          <img
-            class="hero-image"
-            src="./herotower.PNG"
-            alt="Isometric 3D hilltop telecom site with lattice tower, equipment shelter, standby diesel generator, and field maintenance pickup truck"
-            draggable="false"
-          />
+          <!--
+            The same hero artwork in three encodings. Browsers pick AVIF, then
+            WebP, then the original PNG; the PNG at 3.2 MB is now only a
+            fallback for very old browsers.
+          -->
+          <!--
+            The same hero artwork in three encodings and three widths. Browsers
+            pick AVIF, then WebP, then the original PNG; the width set keeps the
+            picture at or above its rendered size so it is never upscaled. The
+            PNG at 3.2 MB is now only a fallback for very old browsers.
+          -->
+          <div class="hero-backdrop" aria-hidden="true"></div>
+          <picture>
+            <source
+              type="image/avif"
+              sizes="100vw"
+              srcset="
+                ./herotower-1200.avif 1200w,
+                ./herotower-1678.avif 1678w,
+                ./herotower-2200.avif 2200w
+              "
+            />
+            <source
+              type="image/webp"
+              sizes="100vw"
+              srcset="
+                ./herotower-1200.webp 1200w,
+                ./herotower-1678.webp 1678w,
+                ./herotower-2200.webp 2200w
+              "
+            />
+            <img
+              class="hero-image"
+              src="./herotower.PNG"
+              alt="Isometric 3D hilltop telecom site with lattice tower, equipment shelter, standby diesel generator, and field maintenance pickup truck"
+              draggable="false"
+            />
+          </picture>
+          <div class="hero-shade" aria-hidden="true"></div>
           <div class="hero-sunlight" aria-hidden="true"></div>
           <div class="hero-sky-drift" aria-hidden="true"></div>
+          <div class="hero-water" aria-hidden="true">
+            <span class="hero-water-swell"></span>
+            <span class="hero-water-swell deep"></span>
+            <span class="hero-water-glint"></span>
+          </div>
           <div class="hero-lake-shimmer" aria-hidden="true"></div>
+          <div class="hero-grass" id="hero-grass" aria-hidden="true"></div>
+          <div class="hero-wind" id="hero-wind" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
           <div class="hero-beacon-pulse" aria-hidden="true"></div>
           <div class="hero-breeze" id="hero-breeze" aria-hidden="true"></div>
 
@@ -141,8 +185,89 @@
           TERMINAL
         </button>
         <button class="icon-button" id="fit-site">FIT SITE</button>
+        <button class="icon-button undo-redo" id="undo-button" type="button" aria-label="Undo">
+          &#8630;
+        </button>
+        <button class="icon-button undo-redo" id="redo-button" type="button" aria-label="Redo">
+          &#8631;
+        </button>
+        <button
+          class="icon-button menu-toggle"
+          id="menu-toggle"
+          type="button"
+          aria-label="Open workspace menu"
+          aria-expanded="false"
+          aria-haspopup="true"
+        >
+          &#8942;
+        </button>
       </div>
     </header>
+
+    <div class="menu-panel" id="menu-panel" role="menu" aria-label="Workspace menu" hidden>
+      <button type="button" role="menuitem" data-action="menu-undo">
+        Undo<small>Ctrl/&#8984;+Z</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-redo">
+        Redo<small>Ctrl/&#8984;+Shift+Z</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-save-file">
+        Save site to file<small>.json</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-open-file">
+        Open site file<small>.json</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-detail-level" id="menu-detail-level">
+        Detail level: Guided<small>Show every control</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-start-fresh">
+        Start fresh<small>Clear autosave</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-shortcuts">
+        Shortcuts &amp; help<small>Keyboard &amp; touch</small>
+      </button>
+    </div>
+    <input
+      type="file"
+      id="site-file-input"
+      accept="application/json,.json"
+      aria-label="Open a saved Tower Studio site file"
+      hidden
+    />
+
+    <div class="modal-scrim" id="shortcuts-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div class="modal-head">
+          <h2 id="shortcuts-title">Shortcuts &amp; help</h2>
+          <button
+            type="button"
+            class="modal-close"
+            data-action="close-shortcuts"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+        <dl class="shortcut-list">
+          <dt>Ctrl / &#8984; + Z</dt>
+          <dd>Undo the last site change</dd>
+          <dt>Ctrl / &#8984; + Shift + Z</dt>
+          <dd>Redo the change you just undid</dd>
+          <dt>Esc</dt>
+          <dd>Deselect the current 3D object (you stay in the same step)</dd>
+          <dt>Drag</dt>
+          <dd>Orbit the site</dd>
+          <dt>Wheel / pinch</dt>
+          <dd>Zoom in and out</dd>
+          <dt>Click an object</dt>
+          <dd>Inspect it in the drawer</dd>
+        </dl>
+        <p class="modal-note">
+          Your work is saved in this browser automatically and can also be exported to a file from
+          the &#8942; menu.
+        </p>
+      </div>
+    </div>
 
     <div class="site-hud-shell" id="site-hud-shell">
       <button
@@ -167,12 +292,12 @@
     </div>
     <section class="ai-architect" id="ai-architect" aria-label="Offline AI Architect command bar">
       <button class="ai-mobile-toggle" id="ai-mobile-toggle" aria-label="Open AI Architect">
-        ✨ AI
+        [ AI ]
       </button>
       <div class="ai-panel" id="ai-panel">
         <form class="ai-form" id="ai-architect-form" autocomplete="off">
           <div class="ai-input-wrap">
-            <span class="ai-search" aria-hidden="true">🔍</span
+            <span class="ai-search" aria-hidden="true"></span
             ><input
               class="ai-input"
               id="ai-architect-input"
@@ -183,7 +308,7 @@
               placeholder="Ask AI Architect or pick a scenario..."
             />
           </div>
-          <button class="ai-build-button" id="ai-build-button" type="submit">✨ AI BUILD</button>
+          <button class="ai-build-button" id="ai-build-button" type="submit">[ AI BUILD ]</button>
           <button
             class="ai-close-button"
             id="ai-close-button"
@@ -195,15 +320,22 @@
         </form>
         <div class="ai-chips" aria-label="AI blueprint quick starters">
           <button class="ai-chip" type="button" data-ai-scenario="zagros">
-            ⚡ Zagros Mountain 5G Relay
+            <small>01</small>Zagros Mountain 5G Relay
           </button>
           <button class="ai-chip" type="button" data-ai-scenario="urban">
-            🏙️ Urban Rooftop 4G/5G C-RAN
+            <small>02</small>Urban Rooftop 4G/5G C-RAN
           </button>
           <button class="ai-chip" type="button" data-ai-scenario="cow">
-            🚨 Emergency Border Outpost (COW)
+            <small>03</small>Emergency Border Outpost (COW)
           </button>
         </div>
+        <div
+          class="ai-plan-card"
+          id="ai-plan-card"
+          role="dialog"
+          aria-label="AI build plan"
+          hidden
+        ></div>
         <div class="ai-build-status" id="ai-build-status" role="status">
           LOCAL NLP · OFFLINE INFERENCE · ZERO API KEYS
         </div>
@@ -213,8 +345,26 @@
       DRAG · ORBIT &nbsp; / &nbsp; WHEEL · ZOOM &nbsp; / &nbsp; CLICK · INSPECT
     </div>
     <div id="selection-tag"></div>
+    <div class="gesture-hint" id="gesture-hint" role="status" hidden>
+      <span
+        >Drag to orbit · pinch or wheel to zoom · tap any object to inspect it. Use the
+        <strong>PANEL</strong> handle to change how much of the controls you see.</span
+      >
+      <button type="button" class="gesture-hint-close" data-action="dismiss-gesture-hint">
+        GOT IT
+      </button>
+    </div>
 
     <section class="drawer" id="drawer" aria-label="Site configuration drawer">
+      <button
+        type="button"
+        class="sheet-handle"
+        id="sheet-handle"
+        aria-label="Expand control panel"
+      >
+        <span class="sheet-grip" aria-hidden="true"></span>
+        <span class="sheet-handle-text">PANEL</span>
+      </button>
       <div class="drawer-head">
         <div class="step-number">01</div>
         <div class="drawer-title">
@@ -226,9 +376,7 @@
           id="drawer-toggle"
           aria-label="Collapse drawer"
           aria-expanded="true"
-        >
-          ⌄
-        </button>
+        ></button>
       </div>
       <div class="tabs" role="tablist" aria-label="Site drawer sections">
         <button class="tab" role="tab" data-action="tab" data-value="overview" aria-selected="true">
@@ -267,7 +415,26 @@
     <div id="toast" role="status"></div>
     <div id="loading">ASSEMBLING TELECOM SITE…</div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!--
+      Three.js r128 loads from the CDN with a Subresource Integrity hash so a
+      tampered or substituted file cannot run. If the CDN is blocked, or the
+      hash does not match, the identical build is served from ./vendor instead
+      (MIT licensed, see vendor/THREE-LICENSE.txt).
+    -->
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+      integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+      onerror="window.__threeCdnFailed = true"
+    ></script>
+    <script>
+      // Synchronous fallback so app.js still finds window.THREE on the first
+      // run, including when index.html is opened straight off the disk.
+      if (!window.THREE) {
+        document.write('<script src="./vendor/three.min.js"><\/script>');
+      }
+    </script>
     <script src="./src/js/app.js"></script>
   </body>
 </html>

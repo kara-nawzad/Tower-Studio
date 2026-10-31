@@ -39,6 +39,70 @@ button,
 input {
   font: inherit;
 }
+/* The UA stylesheet points <code> at the browser's own monospace; keep every
+   code span on the project's face instead. */
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--mono);
+}
+
+/* Status marks drawn with borders, never typed as glyphs: the project ships
+   three typefaces and nothing should need a fourth. */
+.mark {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  vertical-align: -1px;
+}
+.mark::before,
+.mark::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+.mark-ok::before {
+  left: 0;
+  top: 5px;
+  width: 5px;
+  height: 2px;
+  transform: rotate(45deg);
+}
+.mark-ok::after {
+  left: 3px;
+  top: 7px;
+  width: 9px;
+  height: 2px;
+  transform: rotate(-52deg);
+}
+.mark-no::before,
+.mark-no::after {
+  left: 0;
+  top: 4px;
+  width: 11px;
+  height: 2px;
+}
+.mark-no::before {
+  transform: rotate(45deg);
+}
+.mark-no::after {
+  transform: rotate(-45deg);
+}
+.mark-warn::before {
+  left: 3px;
+  top: 0;
+  width: 3px;
+  height: 6px;
+}
+.mark-warn::after {
+  left: 3px;
+  top: 7px;
+  width: 3px;
+  height: 3px;
+}
 button {
   color: inherit;
 }
@@ -109,6 +173,11 @@ h1 {
 h1 span {
   color: var(--blue);
 }
+:root {
+  --nav-h: 66px;
+  --chrome-gap: 10px;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -160,6 +229,242 @@ h1 span {
   width: 38px;
   padding: 0;
   font-size: 18px;
+}
+
+/* Workspace menu, file import/export and dialogs (Phase 2) */
+.undo-redo {
+  display: none;
+  width: 38px;
+  padding: 0;
+  font-size: 18px;
+}
+.icon-button:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: #f1f0ec;
+  box-shadow: none;
+}
+.icon-button:disabled:hover {
+  background: #f1f0ec;
+}
+@media (min-width: 768px) {
+  .undo-redo {
+    display: block;
+  }
+}
+.menu-toggle {
+  width: 38px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+.menu-panel {
+  position: fixed;
+  z-index: 45;
+  top: calc(72px + env(safe-area-inset-top, 0px));
+  right: 18px;
+  display: flex;
+  width: 244px;
+  flex-direction: column;
+  padding: 6px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+.menu-panel[hidden] {
+  display: none;
+}
+.menu-panel button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: 600 12px var(--body);
+  text-align: left;
+}
+.menu-panel button:hover {
+  background: var(--amber);
+}
+.menu-panel button:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: none;
+}
+.menu-panel button small {
+  color: var(--muted);
+  font: 400 9px/1.3 var(--mono);
+}
+
+.modal-scrim {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.5);
+}
+.modal-scrim[hidden] {
+  display: none;
+}
+.modal-card {
+  width: 100%;
+  max-width: 460px;
+  max-height: 80vh;
+  overflow: auto;
+  padding: 18px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.modal-head h2 {
+  font: 700 20px/1.1 var(--display);
+  text-transform: uppercase;
+}
+.modal-close {
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+.modal-close:hover {
+  background: var(--amber);
+}
+.shortcut-list {
+  display: grid;
+  margin: 0;
+  gap: 6px 14px;
+  grid-template-columns: minmax(120px, auto) 1fr;
+}
+.shortcut-list dt {
+  font: 700 10px/1.6 var(--mono);
+  text-transform: uppercase;
+}
+.shortcut-list dd {
+  margin: 0;
+  color: var(--muted);
+  font: 400 12px/1.6 var(--body);
+}
+.modal-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font: 400 10px/1.6 var(--mono);
+}
+
+/* Inline notices and confirmations rendered at the top of the drawer */
+.restore-notice,
+.profile-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  background: var(--white);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.restore-notice {
+  border-left-color: var(--blue);
+}
+.profile-confirm {
+  border-left-color: var(--orange);
+}
+.restore-notice strong,
+.profile-confirm strong {
+  display: block;
+  margin-bottom: 3px;
+  font: 700 13px/1.25 var(--body);
+}
+.restore-notice span,
+.profile-confirm span {
+  display: block;
+  color: var(--muted);
+  font: 400 11px/1.5 var(--body);
+}
+.restore-notice-actions,
+.profile-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.restore-notice-actions .phase6-button,
+.profile-confirm-actions .phase6-button {
+  min-height: 38px;
+  font-size: 10px;
+}
+
+/* AI plan card: read the plan before anything is rebuilt */
+.ai-plan-card {
+  margin-top: 10px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.ai-plan-card[hidden] {
+  display: none;
+}
+.ai-plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.ai-plan-head strong {
+  font: 700 13px/1.2 var(--body);
+}
+.ai-plan-head span {
+  color: var(--muted);
+  font: 400 10px/1.4 var(--mono);
+}
+.ai-plan-list {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.ai-plan-list li {
+  font: 400 11px/1.7 var(--mono);
+}
+.ai-plan-note {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font: 400 12px/1.55 var(--body);
+}
+.ai-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cv-row .cv-restore {
+  margin-left: auto;
+  min-height: 34px;
+  font-size: 9px;
 }
 
 .site-hud-shell {
@@ -288,6 +593,9 @@ h1 span {
   font: 700 13px var(--mono);
   white-space: nowrap;
 }
+.hud-cell small {
+  font-size: 8px;
+}
 .hud-cell strong.green {
   color: #047857;
 }
@@ -363,11 +671,19 @@ body.hero-active .viewport-note {
 }
 
 .hero-artwork {
+  /*
+    Zoomed out and fitted: the whole illustration sits inside the stage with a
+    small margin, so nothing is cropped on a phone or on a laptop. The box keeps
+    the artwork's own aspect ratio, which means object-fit can never distort it
+    either. The blur layer behind it fills the remaining stage with the same
+    colours instead of empty paper.
+  */
+  --hero-fit: 0.94;
   position: absolute;
   left: 50%;
   top: 50%;
-  width: max(108vw, calc(108vh * var(--hero-aspect)));
-  height: max(108vh, calc(108vw / var(--hero-aspect)));
+  width: min(calc(94vw), calc(94vh * var(--hero-aspect)));
+  height: min(calc(94vh), calc(94vw / var(--hero-aspect)));
   transform: translate3d(calc(-50% + var(--hero-px, 0px)), calc(-50% + var(--hero-py, 0px)), 0)
     rotateX(var(--hero-rx, 0deg)) rotateY(var(--hero-ry, 0deg));
   transform-style: preserve-3d;
@@ -375,12 +691,164 @@ body.hero-active .viewport-note {
   user-select: none;
 }
 
+/* A defocused copy of the same picture fills the letterbox on any shape of
+   screen, so the fitted artwork never floats on empty paper. */
+.hero-backdrop {
+  position: absolute;
+  inset: -14%;
+  pointer-events: none;
+  background-image: url("../../herotower-1200.webp"), url("../../herotower.PNG");
+  background-size: cover;
+  background-position: center;
+  filter: blur(42px) saturate(1.1);
+  transform: scale(1.2);
+  opacity: 0.62;
+}
+
 .hero-image {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
   pointer-events: none;
+}
+
+/* Slow cloud / tree shadows crossing the ground: the cheapest way to make a
+   still picture feel like it is under a moving sky. */
+.hero-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: 0.3;
+  background:
+    radial-gradient(ellipse 26% 12% at 12% 74%, rgba(30, 41, 59, 0.5), transparent 70%),
+    radial-gradient(ellipse 22% 9% at 46% 82%, rgba(30, 41, 59, 0.42), transparent 72%),
+    radial-gradient(ellipse 30% 11% at 78% 69%, rgba(30, 41, 59, 0.38), transparent 74%);
+  animation: heroShadeDrift 46s linear infinite;
+}
+
+/* The lake: two swells running against each other plus drifting sun glitter. */
+.hero-water {
+  position: absolute;
+  left: 43.5%;
+  top: 31%;
+  width: 43%;
+  height: 15.5%;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 50%;
+  -webkit-mask-image: radial-gradient(ellipse 48% 44% at 50% 50%, #000 30%, transparent 76%);
+  mask-image: radial-gradient(ellipse 48% 44% at 50% 50%, #000 30%, transparent 76%);
+}
+.hero-water span {
+  position: absolute;
+  inset: -20% -30%;
+}
+.hero-water-swell {
+  background: repeating-linear-gradient(
+    -12deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(191, 233, 255, 0.34) 9px,
+    rgba(255, 255, 255, 0) 20px
+  );
+  mix-blend-mode: screen;
+  opacity: 0.34;
+  animation: heroWaterSwell 7s ease-in-out infinite alternate;
+}
+.hero-water-swell.deep {
+  background: repeating-linear-gradient(
+    -6deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(148, 205, 235, 0.3) 13px,
+    rgba(255, 255, 255, 0) 28px
+  );
+  opacity: 0.26;
+  animation-duration: 11s;
+  animation-direction: alternate-reverse;
+}
+.hero-water-glint {
+  background:
+    radial-gradient(circle 2px at 18% 42%, rgba(255, 255, 255, 0.95), transparent 60%),
+    radial-gradient(circle 1.5px at 34% 61%, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(circle 2.5px at 52% 38%, rgba(255, 255, 255, 0.85), transparent 60%),
+    radial-gradient(circle 1.5px at 66% 66%, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(circle 2px at 79% 47%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(circle 1.5px at 88% 58%, rgba(255, 255, 255, 0.85), transparent 60%);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  animation: heroWaterGlint 5.5s ease-in-out infinite alternate;
+}
+
+/* Wind: three soft gusts sweeping across the scene at different heights. */
+.hero-wind {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 4%, #000 26%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 4%, #000 26%, #000 88%, transparent 100%);
+}
+.hero-wind span {
+  position: absolute;
+  left: -60%;
+  width: 120%;
+  height: 34%;
+  background: repeating-linear-gradient(
+    74deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(255, 255, 255, 0.16) 22px,
+    rgba(255, 255, 255, 0) 54px
+  );
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+.hero-wind span:nth-child(1) {
+  top: 20%;
+  animation: heroGust 13s linear -2s infinite;
+}
+.hero-wind span:nth-child(2) {
+  top: 46%;
+  height: 26%;
+  animation: heroGust 17s linear -8s infinite;
+}
+.hero-wind span:nth-child(3) {
+  top: 62%;
+  height: 30%;
+  animation: heroGust 21s linear -14s infinite;
+}
+
+/* Grass along the bottom edge: real blades that bend with the same gusts. */
+.hero-grass {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 11%;
+  pointer-events: none;
+}
+.hero-blade {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: #2f6b3a;
+  transform-origin: 50% 100%;
+  opacity: 0.72;
+  animation: heroBladeSway var(--blade-dur, 4.2s) ease-in-out var(--blade-delay, 0s) infinite
+    alternate;
+}
+/* Drifting seeds and leaves riding the wind. */
+.hero-seed {
+  position: absolute;
+  top: var(--seed-y, 55%);
+  left: var(--seed-x, 20%);
+  width: var(--seed-size, 7px);
+  height: calc(var(--seed-size, 7px) * 0.55);
+  border-radius: 60% 10% 60% 10%;
+  background: rgba(122, 158, 92, 0.85);
+  opacity: 0;
+  animation: heroSeedDrift var(--seed-dur, 16s) linear var(--seed-delay, 0s) infinite;
 }
 
 /* Subtle "Living Nature" ambient micro-layers */
@@ -510,6 +978,81 @@ body.hero-active .viewport-note {
   50% {
     opacity: 1;
     transform: translate(-50%, -50%) scale(1.42);
+  }
+}
+
+@keyframes heroShadeDrift {
+  0% {
+    transform: translate3d(-4%, 0, 0);
+  }
+  50% {
+    transform: translate3d(4%, 0.8%, 0);
+  }
+  100% {
+    transform: translate3d(-4%, 0, 0);
+  }
+}
+
+@keyframes heroWaterSwell {
+  0% {
+    transform: translate3d(-3%, 0, 0) scaleY(0.96);
+  }
+  100% {
+    transform: translate3d(3%, 1.5%, 0) scaleY(1.06);
+  }
+}
+
+@keyframes heroWaterGlint {
+  0% {
+    opacity: 0.24;
+    transform: translate3d(-2%, 0.5%, 0) scale(1);
+  }
+  100% {
+    opacity: 0.62;
+    transform: translate3d(2.5%, -0.8%, 0) scale(1.06);
+  }
+}
+
+@keyframes heroGust {
+  0% {
+    opacity: 0;
+    transform: translate3d(-8%, 0, 0) skewX(-6deg);
+  }
+  22% {
+    opacity: 0.5;
+  }
+  74% {
+    opacity: 0.34;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(22%, -3%, 0) skewX(-6deg);
+  }
+}
+
+@keyframes heroBladeSway {
+  0% {
+    transform: rotate(-5deg) skewX(-3deg);
+  }
+  100% {
+    transform: rotate(6deg) skewX(4deg);
+  }
+}
+
+@keyframes heroSeedDrift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  12% {
+    opacity: 0.85;
+  }
+  84% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(34vw, -14vh, 0) rotate(540deg);
   }
 }
 
@@ -850,6 +1393,58 @@ body.hero-active .viewport-note {
   max-height: 66px;
   overflow: hidden;
 }
+.sheet-handle {
+  display: none;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+  cursor: pointer;
+}
+.sheet-grip {
+  width: 46px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.sheet-handle-text {
+  color: var(--muted);
+  font: 700 8px var(--mono);
+  letter-spacing: 0.14em;
+}
+
+.gesture-hint {
+  position: fixed;
+  z-index: 44;
+  left: 50%;
+  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  width: min(420px, calc(100vw - 24px));
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  transform: translateX(-50%);
+  border: 2px solid var(--ink);
+  background: var(--white);
+  box-shadow: 4px 4px 0 var(--ink);
+  font: 400 11px/1.5 var(--body);
+}
+.gesture-hint[hidden] {
+  display: none;
+}
+.gesture-hint-close {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 2px solid var(--ink);
+  background: var(--amber);
+  cursor: pointer;
+  font: 700 9px var(--mono);
+}
+
 .drawer-head {
   min-height: 64px;
   display: flex;
@@ -1419,13 +2014,6 @@ input[type="range"]::-moz-range-thumb {
   font: 700 10px/1.35 var(--mono);
 }
 
-.empty-note {
-  padding: 12px;
-  border: 1px dashed var(--line);
-  color: var(--muted);
-  font: 400 10px/1.5 var(--mono);
-}
-
 .power-nav {
   display: flex;
   margin-bottom: 12px;
@@ -1645,6 +2233,44 @@ input[type="range"]::-moz-range-thumb {
   font: 400 8px/1.5 var(--mono);
 }
 
+/* Read-only fact row: a fixed hardware property described, not selectable. */
+.rack-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 2px;
+}
+.rack-profile-actions .rack-action:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: #f1f0ec;
+  box-shadow: none;
+}
+.rack-note-inline {
+  flex: 1 1 200px;
+  color: var(--muted);
+  font: 400 10px/1.5 var(--mono);
+}
+
+/* Read-only fact row: a fixed hardware property described, not selectable. */
+.read-only-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  background: var(--white);
+}
+.read-only-row strong {
+  font: 700 12px/1.2 var(--body);
+}
+.read-only-row small {
+  color: var(--muted);
+  font: 400 10px/1.35 var(--mono);
+}
+
 /* Five master steps remain stable; every rack view lives in Step 02. */
 .master-nav {
   position: fixed;
@@ -1688,6 +2314,315 @@ input[type="range"]::-moz-range-thumb {
 }
 .master-step:hover {
   background: #fef9c3;
+}
+
+/* Guided step states: done / to do / locked (Phase 3) */
+.step-chip {
+  display: block;
+  margin-top: 3px;
+  font: 700 7px/1.3 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.step-chip.done {
+  color: #047857;
+}
+.step-chip.attention {
+  color: var(--muted);
+}
+.step-chip.locked {
+  color: #b45309;
+}
+.master-step.is-locked {
+  color: var(--muted);
+}
+.master-step.is-done::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 2px;
+  margin: 2px auto 0;
+  background: var(--green);
+}
+
+.locked-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  border-left-color: var(--orange);
+  background: var(--white);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.locked-notice strong {
+  display: block;
+  margin-bottom: 3px;
+  font: 700 13px/1.25 var(--body);
+}
+.locked-notice span {
+  display: block;
+  color: var(--muted);
+  font: 400 11px/1.5 var(--body);
+}
+.locked-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.locked-notice-actions .phase6-button {
+  min-height: 38px;
+  font-size: 10px;
+}
+
+/* Glossary terms: hover, focus and tap all reveal the same definition */
+.term {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted var(--ink);
+  background: none;
+  color: inherit;
+  cursor: help;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.term:hover,
+.term:focus-visible,
+.term.open {
+  background: var(--amber);
+  outline: none;
+}
+.term-def {
+  position: absolute;
+  z-index: 55;
+  left: 0;
+  top: calc(100% + 6px);
+  display: none;
+  width: min(280px, 78vw);
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: var(--ink);
+  font: 400 11px/1.5 var(--body);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+}
+.term {
+  position: relative;
+}
+.term:hover .term-def,
+.term:focus-visible .term-def,
+.term.open .term-def {
+  display: block;
+}
+
+/* "More options" fold used by Guided mode */
+.more-options {
+  border: 2px solid var(--line);
+  background: var(--paper);
+}
+.more-options > summary {
+  min-height: 40px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font: 700 11px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  list-style: none;
+}
+.more-options > summary::-webkit-details-marker {
+  display: none;
+}
+.more-options > summary::before {
+  content: "+ ";
+  color: var(--muted);
+}
+.more-options[open] > summary::before {
+  content: "− ";
+}
+.more-options > summary:hover {
+  background: var(--amber);
+}
+
+/* One scrolling panel per step: controls, live numbers, what is this, specs */
+.panel-section {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+}
+.panel-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.panel-heading h3 {
+  font: 700 13px/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.explainer-card {
+  padding: 12px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+}
+.explainer-card h4 {
+  margin-bottom: 6px;
+  font: 700 15px/1.2 var(--display);
+  text-transform: uppercase;
+}
+.explainer-card p {
+  color: var(--ink);
+  font: 400 12px/1.6 var(--body);
+}
+.explainer-note {
+  margin-top: 8px;
+  color: var(--muted) !important;
+}
+
+.hidden-line {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font: 400 10px/1.6 var(--mono);
+}
+
+/* Visible reason text on any disabled control */
+.option-lock {
+  display: block;
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+  color: #b45309;
+  font: 700 9px/1.4 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Step 04 sub-navigation: 4A backhaul / 4B sectors */
+.sub-nav {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.sub-nav-item {
+  display: flex;
+  min-height: 56px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.sub-nav-item small:first-child {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font: 700 8px var(--mono);
+  letter-spacing: 0.1em;
+}
+.sub-nav-item.active {
+  background: var(--amber);
+}
+.sub-nav-item small:last-child {
+  color: var(--muted);
+  font: 400 10px/1.4 var(--body);
+}
+.sub-nav-item.active small:last-child {
+  color: var(--ink);
+}
+
+/* Read-only reminder of the profile chosen in step 02 */
+.profile-chip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 9px 11px;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  border-left-color: var(--blue);
+  background: var(--white);
+}
+.profile-chip-label {
+  flex: 1 0 100%;
+  color: var(--muted);
+  font: 700 8px var(--mono);
+  letter-spacing: 0.1em;
+}
+.profile-chip strong {
+  font: 700 12px/1.3 var(--body);
+}
+.profile-chip small {
+  flex: 1;
+  color: var(--muted);
+  font: 400 10px/1.4 var(--mono);
+}
+.profile-chip .phase6-button {
+  min-height: 32px;
+  font-size: 9px;
+}
+
+/* Six readiness gates, shown from step 02 onward */
+.gate-strip {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+.gate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  background: var(--white);
+}
+.gate small {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font: 400 9px/1.3 var(--mono);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.gate strong {
+  font: 700 9px var(--mono);
+}
+.gate-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+.gate.pass .gate-dot {
+  background: var(--green);
+}
+.gate.pass strong {
+  color: #047857;
+}
+.gate.fail .gate-dot {
+  background: var(--red);
+}
+.gate.fail strong {
+  color: #b91c1c;
 }
 
 .rack-nav {
@@ -1939,6 +2874,21 @@ input[type="range"]::-moz-range-thumb {
   color: var(--muted);
   background: var(--paper);
 }
+.rack-slot-tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font: 700 7px/1.4 var(--mono);
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.rack-slot-tag.empty {
+  border-style: dashed;
+}
 .rack-slot.installed::after {
   content: "";
   position: absolute;
@@ -2026,6 +2976,25 @@ input[type="range"]::-moz-range-thumb {
 .mw-system-toggle button.active {
   background: var(--amber);
   box-shadow: 2px 2px 0 var(--ink);
+}
+/* A drawn dot (microwave dish) and diamond (sector panel) replace the emoji
+   that used to render in the system colour font. */
+.mw-system-toggle button::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.mw-system-toggle button[data-value="CELLULAR"]::before {
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+.mw-system-toggle button.active::before {
+  background: var(--ink);
 }
 .mw-hero {
   border: 2px solid var(--ink);
@@ -2214,12 +3183,6 @@ input[type="range"]::-moz-range-thumb {
 .mw-control input[type="range"] {
   min-height: 44px;
 }
-.mw-note {
-  margin-top: 9px;
-  color: var(--muted);
-  font: 400 8px/1.5 var(--mono);
-}
-
 .smart-filter {
   margin-bottom: 12px;
   border: 2px solid var(--ink);
@@ -2847,7 +3810,7 @@ input[type="range"]::-moz-range-thumb {
   color: #d1fae5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 400 9px/1.55 var(--mono);
+  font: 400 11px/1.55 var(--mono);
 }
 .cli-output .command {
   color: #fde047;
@@ -2966,9 +3929,31 @@ input[type="range"]::-moz-range-thumb {
   background: var(--white);
 }
 .ai-search {
+  position: relative;
   flex: none;
-  padding-left: 9px;
-  font-size: 14px;
+  width: 22px;
+  height: 22px;
+  margin-left: 9px;
+}
+.ai-search::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+.ai-search::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 13px;
+  width: 7px;
+  height: 2px;
+  background: var(--muted);
+  transform: rotate(45deg);
 }
 .ai-input {
   width: 100%;
@@ -3018,6 +4003,12 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
   text-align: left;
   font: 700 8px/1.35 var(--body);
+}
+.ai-chip small {
+  display: block;
+  margin-bottom: 2px;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.08em;
 }
 .ai-chip:disabled {
   opacity: 0.5;
@@ -3118,7 +4109,8 @@ input[type="range"]::-moz-range-thumb {
 
 #toast {
   position: fixed;
-  z-index: 50;
+  /* Above the hero tab (z-index 60) so a toast is never hidden by it (9.6 #59). */
+  z-index: 70;
   left: 50%;
   top: 22%;
   transform: translate(-50%, -10px);
@@ -3167,7 +4159,7 @@ input[type="range"]::-moz-range-thumb {
     bottom: 84px;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .topbar {
     top: calc(10px + env(safe-area-inset-top, 0px));
     left: 10px;
@@ -3198,9 +4190,6 @@ input[type="range"]::-moz-range-thumb {
     font-size: 8px;
     box-shadow: 2px 2px 0 var(--ink);
   }
-  .zoom-buttons {
-    display: none;
-  }
   .site-hud-shell {
     top: calc(62px + env(safe-area-inset-top, 0px));
     left: 10px;
@@ -3218,13 +4207,49 @@ input[type="range"]::-moz-range-thumb {
   .hud-cell strong {
     font-size: 11px;
   }
+  /* Phones: the drawer becomes a bottom sheet with three snap heights. The
+     available height is the viewport minus the top bar, the step nav and the
+     gaps — previously this was "44vh - 72px", which collapsed the panel. */
   .drawer {
-    width: calc(100vw - 20px);
-    bottom: calc(74px + env(safe-area-inset-bottom, 0px));
-    max-height: calc(44vh - 74px - env(safe-area-inset-bottom, 0px));
+    left: var(--chrome-gap);
+    right: var(--chrome-gap);
+    bottom: calc(var(--nav-h) + var(--chrome-gap) + 4px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: calc(
+      100dvh - var(--nav-h) - 118px - env(safe-area-inset-top, 0px) -
+        env(safe-area-inset-bottom, 0px)
+    );
+    transform: none;
+    border-left-width: 2px;
+    border-right-width: 2px;
   }
-  .drawer.terminal-mode {
-    max-height: calc(44vh - 74px - env(safe-area-inset-bottom, 0px));
+  .drawer[data-sheet="peek"] {
+    max-height: 96px;
+    overflow: hidden;
+  }
+  .drawer[data-sheet="half"] {
+    max-height: 50dvh;
+  }
+  .drawer[data-sheet="full"] {
+    max-height: calc(
+      100dvh - var(--nav-h) - 70px - env(safe-area-inset-top, 0px) -
+        env(safe-area-inset-bottom, 0px)
+    );
+  }
+  .drawer.collapsed {
+    max-height: 0;
+    border-width: 0;
+  }
+  .sheet-handle {
+    display: flex;
+  }
+  .drawer-content {
+    padding: 12px 12px 16px;
+  }
+  /* The AI bar sits above the sheet instead of under it. */
+  .ai-architect {
+    z-index: 24;
+    bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom, 0px));
   }
   .drawer-head {
     min-height: 56px;
@@ -3478,19 +4503,27 @@ input[type="range"]::-moz-range-thumb {
     overflow: hidden;
     touch-action: none;
   }
+  /*
+    Phone: the old rule sized the artwork to 82vh and let the sides fall off the
+    screen, so most of the scene was cropped away. The whole picture now fits
+    the width and floats above the bottom edge, with the blurred copy of itself
+    filling the gap.
+  */
   .hero-artwork {
-    position: absolute;
-    left: 50%;
     top: auto;
-    bottom: 0;
-    height: 82vh;
-    height: 82dvh;
-    width: calc(82vh * var(--hero-aspect));
-    width: calc(82dvh * var(--hero-aspect));
-    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 5.5%, #000 100%);
-    mask-image: linear-gradient(180deg, transparent 0%, #000 5.5%, #000 100%);
-    transform: translate3d(calc(-56.5% + var(--hero-px, 0px)), calc(var(--hero-py, 0px)), 0)
+    bottom: 18vh;
+    bottom: 18dvh;
+    width: min(94vw, calc(94vh * var(--hero-aspect)));
+    height: min(calc(94vh), calc(94vw / var(--hero-aspect)));
+    transform: translate3d(calc(-50% + var(--hero-px, 0px)), calc(var(--hero-py, 0px)), 0)
       rotateY(var(--hero-ry, 0deg));
+  }
+  .hero-backdrop {
+    filter: blur(34px) saturate(1.12);
+    opacity: 0.7;
+  }
+  .hero-grass {
+    height: 13%;
   }
   .hero-brand-card {
     position: absolute;
@@ -3560,6 +4593,64 @@ input[type="range"]::-moz-range-thumb {
     transform: translate3d(0, 0, 0) scale(1);
   }
 }
+/* Very narrow phones: the rack elevation labels stack instead of clipping. */
+@media (max-width: 430px) {
+  .rack-elevation-row,
+  .slot-manager-row {
+    flex-wrap: wrap;
+  }
+  .rack-elevation-row > button,
+  .slot-manager-row > button {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .rack-slot-tag,
+  .slot-install {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .option-grid,
+  .tower-grid,
+  .mw-size-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .option-grid[style*="1fr 1fr"],
+  .option-grid[style*="repeat(3"] {
+    grid-template-columns: 1fr !important;
+  }
+  .summary-metrics,
+  .gate-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Landscape phones: keep the sheet usable when the viewport is very short. */
+@media (max-height: 450px) and (orientation: landscape) {
+  .site-hud-shell {
+    display: none;
+  }
+  .drawer {
+    left: 8px;
+    right: auto;
+    bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom, 0px));
+    width: min(420px, calc(100vw - 16px));
+    max-height: calc(100dvh - var(--nav-h) - 20px);
+  }
+  .drawer[data-sheet="half"] {
+    max-height: calc(100dvh - var(--nav-h) - 20px);
+  }
+  .ai-architect {
+    top: 8px;
+    bottom: auto;
+    right: 8px;
+    left: auto;
+    width: min(420px, calc(100vw - 16px));
+  }
+  .gesture-hint {
+    display: none;
+  }
+}
+
 @media (max-width: 390px) {
   .tower-grid {
     grid-template-columns: 1fr;
@@ -3607,8 +4698,56 @@ input[type="range"]::-moz-range-thumb {
   .hero-sky-drift,
   .hero-lake-shimmer,
   .hero-beacon-pulse,
+  .hero-shade,
+  .hero-water-swell,
+  .hero-water-glint,
+  .hero-wind span,
+  .hero-blade,
+  .hero-seed,
   .hero-mote,
   .hero-pin::after {
     animation: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Touch-only sizing. A few controls are deliberately compact on the desktop
+   (notice actions, the HUD scroller, the sheet handle, the "More options"
+   summary), and the glossary terms are inline text whose own box is only as
+   tall as the label. Coarse pointers get the full 44px floor instead. The term
+   hit area is grown with an out-of-flow ::after so the line boxes — and with
+   them every row height and the whole panel layout — stay exactly as they are.
+--------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .term::after {
+    content: "";
+    position: absolute;
+    /* .term-def sits at z-index 55, so the open definition stays on top. */
+    inset: -20px -6px;
+    z-index: 1;
+  }
+  .locked-notice-actions .phase6-button,
+  .restore-notice-actions .phase6-button,
+  .profile-confirm-actions .phase6-button,
+  .profile-chip .phase6-button {
+    min-height: 44px;
+  }
+  .hud-scroll-btn {
+    flex: 0 0 44px;
+    width: 44px;
+    min-height: 44px;
+  }
+  .gesture-hint-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .hero-enter-btn {
+    min-height: 44px;
+  }
+  .sheet-handle {
+    min-height: 44px;
+  }
+  .more-options > summary {
+    min-height: 44px;
   }
 }
