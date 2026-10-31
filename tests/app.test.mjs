@@ -114,7 +114,8 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   assert.equal(studio.state.onboarding.active, false);
   assert.equal(studio.state.masterStep, 2);
   assert.equal(studio.state.tab, "configure");
-  assert.equal(tabsBar.hidden, false);
+  // Phase 3: the three tabs are gone; every step is one scrolling panel.
+  assert.equal(tabsBar.hidden, true);
   assert.equal(hud.classList.contains("is-setup"), false);
   assert.equal(hud.querySelectorAll(".hud-cell").length, 11);
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="ERICSSON"]'));
@@ -337,11 +338,14 @@ test("application executes full Phases 01–07 simulation, RF sweep classifier, 
   const power = studio.calculatePower();
   assert.equal(typeof power.autonomy, "number");
 
-  // Verify master workflow steps 1 through 5
+  // Verify master workflow steps 1 through 5. Guided mode gates the later
+  // steps, so the walkthrough runs in engineer mode.
+  studio.setDetailLevel("ENGINEER");
   for (const step of [1, 2, 3, 4, 5]) {
-    studio.enterMasterStep(step);
+    assert.equal(studio.enterMasterStep(step), true);
     assert.equal(studio.state.masterStep, step);
   }
+  studio.setDetailLevel("GUIDED");
 
   // Verify Phase 05 sweep + Phase 07 RF waveform classifier.
   // The classifier is honest: peak VSWR, fault distance and the confidence-like

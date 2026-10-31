@@ -195,6 +195,9 @@ test("bulk fuel tank uses one nominal capacity everywhere (1,000 L)", () => {
 
 test("clearing the 3D selection keeps the user in the current step", () => {
   const { studio, dom } = createHeadlessStudio({ width: 1440, height: 900 });
+  // Engineer mode unlocks every step; the gating itself is covered in
+  // tests/workspace.test.mjs and tests/flow.test.mjs.
+  studio.setDetailLevel("ENGINEER");
   for (const step of [2, 3, 4, 5]) {
     studio.enterMasterStep(step);
     studio.state.selectedId = "tower";

@@ -290,6 +290,8 @@ st.ai = {
 st.restoreNotice = false;
 // "GUIDED" shows the essentials; "ENGINEER" shows every control (Phase 5).
 st.detail = "GUIDED";
+// Set when the user clicks a step that is not reachable yet.
+st.lockedNotice = null;
 
 const aiBuild = {
   running: false,
@@ -5390,8 +5392,7 @@ function renderPowerOverview() {
   const selected = registry.get(st.selectedId);
   const content = POWER_CONTENT[selected.data.powerKey] || POWER_CONTENT["power-system"];
   const calc = calculatePower();
-  return `${renderPowerNavigator()}
-    ${selected.data.powerKey === "power-system" ? renderPowerFlow() : ""}
+  return `${selected.data.powerKey === "power-system" ? renderPowerFlow() : ""}
     <article class="power-hero" style="margin-top:10px">
       <div class="power-hero-head"><div class="power-hero-icon">P2</div><div><div class="eyebrow">Plain-English component guide</div><h3>${content.title}</h3><p>${selected.data.title}</p></div><span class="power-domain-tag">POWER / PHASE 02</span></div>
       <div class="plain-grid">
@@ -5484,20 +5485,20 @@ function mdbControls() {
     )}<p class="power-note">Main input: 380V three-phase / 220V phase-to-neutral. Class B+C SPDs protect all outgoing branches.</p>`;
 }
 
-function renderPowerConfigure() {
+// Power controls without the navigator, live grid and alarm list; the panel
+// places each of those in its own section so nothing appears twice.
+function renderPowerControls() {
   const selected = registry.get(st.selectedId);
-  const key = selected.data.powerKey;
-  let controls = "";
-  if (key === "ats") controls = atsControls();
-  else if (["generator", "grid", "fuel"].includes(key))
-    controls = sourceModeControls() + (key !== "grid" ? fuelControls() : "");
-  else if (["mdb", "auxiliary"].includes(key)) controls = mdbControls();
-  else if (["rectifier", "rectifier-module", "pcf", "pdu", "pfu", "bfu", "dc-bus"].includes(key))
-    controls = rectifierControls();
-  else if (key === "battery") controls = batteryControls();
-  else if (["ac-board", "climate"].includes(key)) controls = climateControls();
-  else controls = sourceModeControls() + rectifierControls();
-  return `${renderPowerNavigator()}${controls}${renderPowerLiveGrid()}${renderPowerAlarms()}${renderPowerActions()}`;
+  const key = selected ? selected.data.powerKey : "power-system";
+  if (key === "ats") return atsControls();
+  if (["generator", "grid", "fuel"].includes(key))
+    return sourceModeControls() + (key !== "grid" ? fuelControls() : "");
+  if (["mdb", "auxiliary"].includes(key)) return mdbControls();
+  if (["rectifier", "rectifier-module", "pcf", "pdu", "pfu", "bfu", "dc-bus"].includes(key))
+    return rectifierControls();
+  if (key === "battery") return batteryControls();
+  if (["ac-board", "climate"].includes(key)) return climateControls();
+  return sourceModeControls() + rectifierControls();
 }
 
 function powerSpecCard(title, fields, note = "", status = "") {
@@ -5667,7 +5668,7 @@ function renderPowerSpecs() {
       "Select any power component for its dedicated technical data sheet.",
       badge(calc.n1Pass, "N+1 PASS", "N+1 WARN")
     );
-  return `${renderPowerNavigator()}<div class="spec-grid">${common}${specific}</div>${renderPowerLiveGrid()}${renderPowerAlarms()}${renderPowerActions()}`;
+  return `<div class="spec-grid">${common}${specific}</div>`;
 }
 
 function selectedRackKey() {
@@ -5790,11 +5791,11 @@ function renderRackOverview() {
   const title =
     key === "cabinet" ? `${housing.vendor} ${housing.model} · 19-inch Cabinet` : content.title;
   return `${renderRackNavigator()}
-    <article class="rack-hero">
+    <article class="rack-hero" data-rack-hero="1">
       <div class="rack-hero-head"><div class="rack-hero-icon">19″</div><div><h3>${title}</h3><p>${key === "cabinet" ? housing.description : "Selected from the live cabinet rack elevation."}</p></div><span class="rack-vendor-tag">${housing.vendor} / ${housing.ip}</span></div>
       <div class="rack-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY IS IT DOUBLE-WIDE?</small><p>${content.why}</p></div>` : ""}</div>
     </article>
-    ${renderRackMetrics()}${renderRackActionStatus()}${renderRackActions()}${renderRackElevation()}`;
+    ${renderRackActionStatus()}${renderRackActions()}${renderRackElevation()}`;
 }
 
 function renderRackConfigure() {
@@ -5812,10 +5813,8 @@ function renderRackConfigure() {
     amm: slotName("amm"),
     ovp: slotName("ovp"),
   };
-  return `${renderRackNavigator()}
-    <div class="section-label">Vendor ecosystem <span class="tag">STEP 02 ONLY</span></div>
-    <div class="vendor-grid">${["ERICSSON", "HUAWEI", "NOKIA"].map((vendor) => `<button class="option ${st.rack.vendor === vendor ? "active" : ""}" data-action="rack-vendor" data-value="${vendor}">${vendor}<small>${vendor === "ERICSSON" ? "RBS 6201 / RBS 6102" : vendor === "HUAWEI" ? "BTS3900 / BTS3900A" : "AirScale 3U subrack"}</small></button>`).join("")}</div>
-    <p class="rack-note">Active housing: <strong>${housing.model}</strong> · ${housing.description}</p>
+  return `<div class="section-label">Cabinet housing</div>
+    <p class="rack-note">Active housing: <strong>${housing.model}</strong> · ${housing.description} Change the vendor or generation with the profile tree at the top of this step.</p>
     <div class="section-label">Installation & access</div>
     <div class="rack-door-controls">
       <button class="option ${st.rack.location === "INDOOR" ? "active" : ""}" data-action="rack-location" data-value="INDOOR" ${st.env === "URBAN_ROOFTOP" ? 'disabled title="Urban rooftop has no indoor shelter; outdoor IP55 is mandatory"' : ""}>Indoor shelter<small>${st.env === "URBAN_ROOFTOP" ? "Blocked · no shelter on rooftop" : `${rackHousingModel("INDOOR")} · indoor modular rack`}</small></button>
@@ -5844,7 +5843,15 @@ function renderRackConfigure() {
       }</span>
     </div>
     <p class="rack-note">Removing a card empties its physical slot and immediately recalculates cabinet load, backup hours and service capacity. Router or TDM removal also opens the yellow patch link.</p>
-    ${renderRackMetrics()}${renderRackActionStatus()}${renderRackActions()}`;
+    ${renderRackActionStatus()}${renderRackActions()}`;
+}
+
+// The rack controls without the live-numbers block, which the panel renders
+// once in its own section.
+function renderRackControls() {
+  const full = renderRackConfigure();
+  const metrics = renderRackMetrics();
+  return full.includes(metrics) ? full.split(metrics).join("") : full;
 }
 
 function renderRackSpecs() {
@@ -5905,7 +5912,7 @@ function renderRackSpecs() {
     else if (key === "power-shelf")
       fields = [
         ["POSITION", "Shelf 3 · 3U"],
-        ["MODULES", "PCF / PCU / PSU / PDU / PFU / BFU"],
+        ["MODULES", "Rectifier, distribution and battery-fuse modules"],
         ["BUS", "-54V float · -48V nominal"],
         ["LVD", "-42V disconnect"],
       ];
@@ -5926,7 +5933,7 @@ function renderRackSpecs() {
         ? `Alarm highway order: ${alarmPathRoute()} → NOC.`
         : "Procedural 19-inch rack component with live slot state and raycast inspection."
   );
-  return `${renderRackNavigator()}<div class="spec-grid">${common}${specific}</div>${renderRackMetrics()}${renderRackActionStatus()}${renderRackActions()}`;
+  return `<div class="spec-grid">${common}${specific}</div>`;
 }
 
 const MW_CONTENT = {
@@ -6221,20 +6228,19 @@ function renderCellularSpecs() {
 
 function renderCellularView(tab) {
   const head = `${renderMwSystemToggle()}${renderSectorTabs()}`;
-  if (tab === "configure")
-    return `${head}${renderCellularControls()}${renderCellularMetrics()}${renderSiteMaster()}`;
-  if (tab === "specs") return `${head}${renderCellularSpecs()}${renderCellularMetrics()}`;
-  return `${head}${renderCellularHero()}${renderCellularMetrics()}${renderCellularControls()}${renderSiteMaster()}`;
+  if (tab === "specs") return `${head}${renderCellularSpecs()}`;
+  if (tab === "configure") return `${head}${renderCellularControls()}${renderSiteMaster()}`;
+  return renderCellularPanel();
 }
 
-function renderMicrowaveOverview() {
-  if (st.microwave.system === "CELLULAR") return renderCellularView("overview");
+// "What is it / what does it do / why is it important" for the selected dish.
+function renderMicrowaveHero() {
   const kind = selectedMicrowaveKind();
   const content =
     kind === "splitter" && st.microwave.topology !== "HSB"
       ? MW_CONTENT.symmetric
       : MW_CONTENT[kind] || MW_CONTENT.system;
-  return `${renderMwSystemToggle()}<article class="mw-hero"><div class="mw-hero-head"><div class="mw-hero-icon">μW</div><div><h3>${content.title}</h3><p>Selected from the live microwave transmission model.</p></div></div><div class="mw-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY IS IT IMPORTANT?</small><p>${content.why}</p></div>` : ""}</div></article>${renderMwMetrics()}${renderMwMeter()}${renderMwActions()}`;
+  return `<article class="mw-hero"><div class="mw-hero-head"><div class="mw-hero-icon">μW</div><div><h3>${content.title}</h3><p>Selected from the live microwave transmission model.</p></div></div><div class="mw-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY IS IT IMPORTANT?</small><p>${content.why}</p></div>` : ""}</div></article>`;
 }
 
 function renderMicrowaveConfigure() {
@@ -6263,7 +6269,7 @@ function renderMicrowaveConfigure() {
     .join("")}</div>
   ${m.topology === "SD" ? `<div class="section-label">Vertical dish spacing</div><div class="control-card mw-control"><div class="control-row"><label for="mw-spacing">Dish separation</label><output class="control-value" id="mw-spacing-value">${m.spacing.toFixed(1)} m</output></div><input type="range" id="mw-spacing" data-mw-input="spacing" min="3" max="6" step="0.5" value="${m.spacing}" style="--range-progress:${rangeProgress(m.spacing, 3, 6)}%"><div class="range-limits"><span>3m</span><span>6m</span></div></div>` : ""}
   <div class="section-label">Mount & waveguide loss</div><div class="control-card"><div class="control-row"><span class="control-label">${mw.mountType === "INTEGRATED" ? "Integrated rear-hub ODU" : "Separate tower-pipe ODU + brass waveguide"}</span><strong class="control-value">−${mw.mountLoss.toFixed(1)} dB</strong></div><p class="control-note">${mw.mountType === "INTEGRATED" ? "Dishes ≤1.8m clip the ODU directly to the rear hub with no waveguide loss." : "The 2.4m dish uses a flexible brass waveguide. Its 3dB loss cuts transmit power in half."}</p></div>
-  ${renderMwMeter()}${renderMwActions()}`;
+  ${renderMwActions()}`;
 }
 
 function renderMicrowaveSpecs() {
@@ -6350,7 +6356,7 @@ function renderMicrowaveSpecs() {
       ["BOND", "Downward to steel mast"],
       ["PURPOSE", "Lightning / induced-charge path"],
     ];
-  return `${renderMwSystemToggle()}<div class="spec-grid">${common}${powerSpecCard((MW_CONTENT[kind] || MW_CONTENT.system).title, fields, "Procedural transmission component linked to the live topology, alignment and capacity model.")}</div>${renderMwMetrics()}${renderMwActions()}`;
+  return `<div class="spec-grid">${common}${powerSpecCard((MW_CONTENT[kind] || MW_CONTENT.system).title, fields, "Procedural transmission component linked to the live topology, alignment and capacity model.")}</div>`;
 }
 
 // -------------------------------------------------------------------------
@@ -6726,7 +6732,13 @@ function renderPhase6Overview() {
           .filter((check) => !check.pass)
           .map((check) => check.title)
           .join(" · ")}`;
-  return `${renderAcceptancePanel()}<section class="launch-panel"><button class="launch-action ${launch.onAir ? "operational" : ""}" data-action="go-on-air" ${!audit.pass || launch.onAir ? "disabled" : ""}>${launch.onAir ? "[ ON AIR — SITE OPERATIONAL ]" : "[ GO ON AIR ]"}</button><p class="launch-note ${launch.onAir || audit.pass ? "ready" : "blocked"}" id="launch-note">${launchNote}</p></section>${st.terminal.open ? renderTerminal() : `<section class="phase6-card"><h3>Multi-vendor CLI Console</h3><p>Open the docked ${st.rack.vendor} terminal to inspect live MOs, boards, radios, ports, alarms and configuration versions.</p><div class="phase6-actions"><button class="phase6-button primary" data-action="terminal-open">[ OPEN DOCKED TERMINAL ]</button><button class="phase6-button" data-action="acceptance-refresh">[ RE-RUN AUDIT ]</button></div></section>`}`;
+  const blocked = audit.checks.filter((check) => !check.pass);
+  const blockedReason = launch.onAir
+    ? "The site is already on air."
+    : blocked.length
+      ? `Blocked by ${blocked.map((check) => check.title).join(" · ")}. ${blocked[0].explanation}`
+      : "";
+  return `${renderAcceptancePanel()}<section class="launch-panel"><button class="launch-action ${launch.onAir ? "operational" : ""}" data-action="go-on-air" ${!audit.pass || launch.onAir ? `disabled title="${escapeHTML(blockedReason)}"` : ""}>${launch.onAir ? "[ ON AIR — SITE OPERATIONAL ]" : "[ GO ON AIR ]"}</button><p class="launch-note ${launch.onAir || audit.pass ? "ready" : "blocked"}" id="launch-note">${launchNote}</p></section>${st.terminal.open ? renderTerminal() : `<section class="phase6-card"><h3>Multi-vendor CLI Console</h3><p>Open the docked ${st.rack.vendor} terminal to inspect live MOs, boards, radios, ports, alarms and configuration versions.</p><div class="phase6-actions"><button class="phase6-button primary" data-action="terminal-open">[ OPEN DOCKED TERMINAL ]</button><button class="phase6-button" data-action="acceptance-refresh">[ RE-RUN AUDIT ]</button></div></section>`}`;
 }
 
 function cvByName(name) {
@@ -8400,9 +8412,10 @@ function renderOnboardingStep1() {
         const reason = allowed
           ? `${item.range[0]}–${item.range[1]} m · ${item.detail}`
           : towerDisallowedReason(st.env, key);
-        return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small></button>`;
+        return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small>${allowed ? "" : '<span class="option-lock">Hidden for ' + escapeHTML(env.name) + "</span>"}</button>`;
       })
       .join("")}</div>
+    ${renderHiddenTowerLine(env)}
     <div class="section-label">03 · Tower height</div>
     <div class="control-card">
       <div class="control-row"><label for="tower-height">Tower height</label><output class="control-value" id="height-value" for="tower-height">${st.H} m</output></div>
@@ -8416,43 +8429,138 @@ function renderOnboardingStep1() {
     }`;
 }
 
-function renderOverview() {
-  if (st.masterStep === 5) return renderPhase6Overview();
-  if (isTransmissionMode()) return renderSmartFilter("step4") + renderMicrowaveOverview();
-  if (isRackMode()) return renderSmartFilter("step2") + renderRackOverview();
-  if (isPowerSelection()) return renderPowerOverview();
+// Phase 3: one vertically scrolling panel per step replaces the three tabs.
+// Order is always: the controls, then Live numbers, then "What is this?",
+// then Specs and details.
+function panelSection(title, body, tag) {
+  if (!body) return "";
+  return `<section class="panel-section"><div class="panel-heading"><h3>${title}</h3>${
+    tag ? `<span class="tag">${escapeHTML(tag)}</span>` : ""
+  }</div>${body}</section>`;
+}
+
+function renderStepPanel() {
+  if (st.masterStep === 5) return renderPhase6Panel();
+  if (isTransmissionMode()) return renderTransmissionSubNav() + renderMicrowavePanel();
+  if (isRackMode()) return renderSmartFilter("step2") + renderRackPanel();
+  if (isPowerSelection()) return renderPowerSubNav() + renderPowerPanel();
   if (st.onboarding.active && st.masterStep === 1 && !st.selectedId) return renderOnboardingStep1();
+  return renderSitePanel();
+}
+
+// Step 04 is two halves: 4A aims the microwave dishes, 4B tunes the cellular
+// sectors. The equipment profile is chosen once in step 02 and only reported
+// here (audit 9.1 #7).
+function renderTransmissionSubNav() {
+  const microwave = st.microwave.system === "MICROWAVE";
+  return `<div class="sub-nav" role="group" aria-label="Step 04 sections">
+    <button class="sub-nav-item ${microwave ? "active" : ""}" data-action="mw-system" data-value="MICROWAVE"><small>4A</small>Backhaul<small>Microwave dishes &amp; link budget</small></button>
+    <button class="sub-nav-item ${microwave ? "" : "active"}" data-action="mw-system" data-value="CELLULAR"><small>4B</small>Sectors<small>Cellular RF &amp; line sweeps</small></button>
+  </div>${renderProfileChip()}`;
+}
+
+// Read-only reminder of the profile chosen in step 02.
+function renderProfileChip() {
+  const profile = smartProfile();
+  return `<div class="profile-chip" role="note"><span class="profile-chip-label">EQUIPMENT PROFILE · SET IN STEP 02</span><strong>${escapeHTML(st.rack.vendor)} · ${escapeHTML(cellularGeneration().label)}</strong><small>${escapeHTML(profile.chassis)}</small><button type="button" class="phase6-button" data-action="goto-step" data-value="2">[ CHANGE IN STEP 02 ]</button></div>`;
+}
+
+function renderMicrowavePanel() {
+  if (st.microwave.system === "CELLULAR") return renderCellularPanel();
+  return (
+    renderMicrowaveHero() +
+    panelSection("Live numbers", renderMwMetrics() + renderMwMeter(), "LINK BUDGET") +
+    panelSection("Configure", renderMicrowaveConfigure()) +
+    panelSection("Specs and details", renderMicrowaveSpecs(), "PRELIMINARY")
+  );
+}
+
+function renderCellularPanel() {
+  return (
+    renderSectorTabs() +
+    renderCellularHero() +
+    panelSection("Live numbers", renderCellularMetrics() + renderSiteMaster(), "PER SECTOR") +
+    panelSection("Configure", renderCellularControls()) +
+    panelSection("Specs and details", renderCellularSpecs())
+  );
+}
+
+function renderRackPanel() {
+  return (
+    renderRackOverview() +
+    panelSection("Live numbers", renderRackMetrics(), "LIVE kW / HOURS / Gbps") +
+    panelSection("Configure", renderRackControls()) +
+    panelSection("Specs and details", renderRackSpecs(), "PRELIMINARY")
+  );
+}
+
+function renderPowerSubNav() {
+  return renderPowerNavigator();
+}
+
+function renderPowerPanel() {
+  return (
+    renderPowerOverview() +
+    panelSection("Live numbers", renderPowerLiveGrid(), "SIMULATED") +
+    panelSection("Configure", renderPowerControls()) +
+    panelSection("Alarms", renderPowerAlarms()) +
+    panelSection("Specs and details", renderPowerSpecs(), "PRELIMINARY")
+  );
+}
+
+function renderPhase6Panel() {
+  return (
+    renderPhase6Overview() +
+    panelSection("Configure", renderPhase6Configure(), "COMMANDS & LAUNCH") +
+    panelSection("Specs and details", renderPhase6Specs())
+  );
+}
+
+// Step 01 default view: one scroll, four sections, no duplicates.
+function renderSitePanel() {
+  return (
+    renderInspector() +
+    renderSiteControls() +
+    panelSection("Live numbers", renderSiteMetrics(), "UPDATES WITH HEIGHT") +
+    panelSection("What is this?", renderSiteExplainer()) +
+    panelSection("Specs and details", renderSiteDetails(), "PRELIMINARY")
+  );
+}
+
+function renderSiteMetrics() {
   const env = ENVIRONMENTS[st.env];
   const calc = calculateEngineering();
-  const power = calculatePower();
-  return `${renderInspector()}
-    <div class="section-label">Selected environment <span class="tag">${st.env}</span></div>
-    <article class="environment-summary">
-      <div><h3>${env.title}</h3><p>${env.description}</p></div>
-      <div class="summary-metrics">
+  return `<div class="summary-metrics">
         <div class="metric"><small>DESIGN WIND</small><strong>${env.wind} km/h</strong></div>
         <div class="metric"><small>CIVIL DEAD LOAD</small><strong>${calc.deadLoad.toFixed(1)} kN</strong></div>
         <div class="metric"><small>FOUNDATION</small><strong>${env.bearing ? env.bearing + " kPa" : "ROOF FRAME"}</strong></div>
         <div class="metric"><small>ICE LOADING</small><strong>${env.ice}</strong></div>
-      </div>
-    </article>
-    <div class="section-label">Live site definition <span class="tag">JAVASCRIPT</span></div>
-    <div class="code-card"><div class="code-head"><span>site.phase01.config.js</span><button data-action="copy-code">COPY CODE</button></div><pre id="code-snippet"><code>${highlightedCode()}</code></pre></div>
-    <div class="section-label">Phase 02 · Electrical &amp; climate</div>
-    <button class="power-entry" data-action="select-power" data-value="power-system"><span class="entry-icon"></span><span><strong>Site power &amp; backup engine</strong><small>${power.totalLoad.toFixed(1)} kW total · ${power.autonomy.toFixed(1)} h battery · N+1 ${power.n1Pass ? "PASS" : "WARN"}</small></span><span class="entry-arrow">→</span></button>`;
+        <div class="metric"><small>TORSIONAL TWIST</small><strong>${calc.twist.toFixed(2)}°</strong></div>
+        <div class="metric"><small>EARTH LOOP</small><strong>${Number.isFinite(calc.resistance) ? calc.resistance.toFixed(1) + " Ω" : "OPEN"}</strong></div>
+      </div>`;
 }
 
-function renderConfigure() {
-  if (st.masterStep === 5) return renderPhase6Configure();
-  if (isTransmissionMode()) return renderSmartFilter("step4") + renderMicrowaveConfigure();
-  if (isRackMode()) return renderSmartFilter("step2") + renderRackConfigure();
-  if (isPowerSelection()) return renderPowerConfigure();
-  if (st.onboarding.active && st.masterStep === 1 && !st.selectedId) return renderOnboardingStep1();
+function renderSiteExplainer() {
+  const env = ENVIRONMENTS[st.env];
+  return `<article class="explainer-card">
+      <h4>${env.title}</h4>
+      <p>${env.description}</p>
+      <p class="explainer-note">Choose where the site goes first: the environment fixes the design wind, the soil, the ice allowance and which tower types are legal. Height, lightning and grounding are then checked against those numbers.</p>
+    </article>`;
+}
+
+function renderSiteDetails() {
+  return `<div class="section-label">Live site definition <span class="tag">JAVASCRIPT</span></div>
+    <div class="code-card"><div class="code-head"><span>site.phase01.config.js</span><button data-action="copy-code">COPY CODE</button></div><pre id="code-snippet"><code>${highlightedCode()}</code></pre></div>
+    ${renderSpecs()}`;
+}
+
+function renderSiteControls() {
   const env = ENVIRONMENTS[st.env];
   const tower = TOWERS[st.tower];
   const [min, max] = tower.range;
   const progress = ((st.H - min) / (max - min)) * 100;
-  return `<div class="section-label">01 · Environment</div>
+  const controls = `<div class="section-label">01 · Environment</div>
     <div class="option-grid">${Object.entries(ENVIRONMENTS)
       .map(
         ([key, item]) =>
@@ -8469,6 +8577,7 @@ function renderConfigure() {
         return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small></button>`;
       })
       .join("")}</div>
+    ${renderHiddenTowerLine(env)}
     <div class="section-label">03 · Parametric height</div>
     <div class="control-card">
       <div class="control-row"><label for="tower-height">Tower height</label><output class="control-value" id="height-value" for="tower-height">${st.H} m</output></div>
@@ -8488,18 +8597,23 @@ function renderConfigure() {
       <span class="switch-copy"><strong>70 mm² fence bonding + Cadweld earth pits</strong><small>Bond posts every 10 m, bridge the gate hinge and connect the lightning down conductor.</small></span>
       ${env.mandatoryGrounding ? '<span class="lock">LOCKED · REQUIRED</span>' : ""}
     </label>
-    <div class="section-label">06 · Power &amp; climate <span class="tag">PHASE 02</span></div>
-    <div class="option-grid" style="grid-template-columns:repeat(3,1fr)">
-      <button class="option" data-action="select-power" data-value="ats">ATS &amp; sources<small>Grid, generators &amp; interlock</small></button>
-      <button class="option" data-action="select-power" data-value="rectifier-plant">-48V DC plant<small>Rectifiers, batteries &amp; N+1</small></button>
-      <button class="option" data-action="select-power" data-value="ac-board">Climate control<small>Dual splits &amp; Alarm #6</small></button>
-    </div>`;
+    <p class="control-note">Power, backup and climate have their own step: continue to <strong>Step 03 · Power</strong> once the structure is defined.</p>`;
+  return controls;
+}
+
+// Names the towers the chosen environment rules out, in plain language.
+function renderHiddenTowerLine(env) {
+  const hidden = Object.keys(TOWERS).filter((key) => !env.allowed.includes(key));
+  if (!hidden.length) return "";
+  return `<p class="hidden-line">Hidden for ${escapeHTML(env.name)}: ${hidden
+    .map((key) => escapeHTML(TOWERS[key].short))
+    .join(", ")}. ${escapeHTML(towerDisallowedReason(st.env, hidden[0]))}</p>`;
 }
 
 function renderSpecs() {
   if (st.masterStep === 5) return renderPhase6Specs();
-  if (isTransmissionMode()) return renderSmartFilter("step4") + renderMicrowaveSpecs();
-  if (isRackMode()) return renderSmartFilter("step2") + renderRackSpecs();
+  if (isTransmissionMode()) return renderMicrowaveSpecs();
+  if (isRackMode()) return renderRackSpecs();
   if (isPowerSelection()) return renderPowerSpecs();
   const env = ENVIRONMENTS[st.env];
   const tower = TOWERS[st.tower];
@@ -8562,12 +8676,10 @@ function renderDrawer() {
     "aria-label",
     st.drawerOpen ? "Collapse drawer" : "Expand drawer"
   );
-  document
-    .querySelectorAll(".tab")
-    .forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.value === st.tab)));
-  const selected = registry.get(st.selectedId);
+  // Phase 3: the three tabs are replaced by one scrolling panel per step.
   const tabsBar = $("#drawer .tabs");
-  if (tabsBar) tabsBar.hidden = Boolean(st.onboarding.active && st.masterStep === 1 && !selected);
+  if (tabsBar) tabsBar.hidden = true;
+  const selected = registry.get(st.selectedId);
   const titles = {
     1: st.onboarding.active && !selected ? "New site setup" : "Meet the site",
     2: "Open the cabinet",
@@ -8589,22 +8701,46 @@ function renderDrawer() {
             ? `${st.rack.vendor} CLI · carrier acceptance · operational launch`
             : `${ENVIRONMENTS[st.env].title} · ${TOWERS[st.tower].short}`;
   document.querySelectorAll(".master-step").forEach((button) => {
-    const active = Number(button.dataset.step) === st.masterStep;
-    button.classList.toggle("active", active);
-    if (active) button.setAttribute("aria-current", "step");
+    const step = Number(button.dataset.step);
+    const { state, reason } = stepState(step);
+    button.classList.toggle("active", step === st.masterStep);
+    button.classList.toggle("is-done", state === "DONE");
+    button.classList.toggle("is-attention", state === "ATTENTION" && step !== st.masterStep);
+    button.classList.toggle("is-locked", state === "LOCKED");
+    button.disabled = false; // locked steps stay clickable so they can explain why
+    button.setAttribute(
+      "title",
+      state === "LOCKED" ? reason : state === "DONE" ? "Complete" : "Still to do"
+    );
+    if (step === st.masterStep) button.setAttribute("aria-current", "step");
     else button.removeAttribute("aria-current");
+    let chip = button.querySelector(".step-chip");
+    if (!chip) {
+      chip = document.createElement("span");
+      chip.className = "step-chip";
+      button.appendChild(chip);
+    }
+    chip.className = `step-chip ${state.toLowerCase()}`;
+    chip.textContent = state === "DONE" ? "Done" : state === "LOCKED" ? "Locked" : "To do";
   });
   const content = $("#drawer-content");
   const scrollTop = content.scrollTop;
   const activeId = document.activeElement ? document.activeElement.id : "";
   content.innerHTML =
     renderRestoreNotice() +
+    renderLockedNotice() +
     renderProfileConfirmCard() +
-    (st.tab === "configure"
-      ? renderConfigure()
-      : st.tab === "specs"
-        ? renderSpecs()
-        : renderOverview());
+    (st.masterStep >= 2 && !st.onboarding.active ? gateStrip() : "") +
+    renderStepPanel();
+  // Touch devices have no hover, so every disabled control repeats its title
+  // as visible text next to the control (audit 9.1 #14).
+  content.querySelectorAll("button[disabled][title]").forEach((element) => {
+    if (element.querySelector(".option-lock")) return;
+    const lock = document.createElement("span");
+    lock.className = "option-lock";
+    lock.textContent = element.getAttribute("title");
+    element.appendChild(lock);
+  });
   content.scrollTop = scrollTop;
   if (activeId) {
     const restored = document.getElementById(activeId);
@@ -9506,8 +9642,94 @@ function initHeroTab() {
   setHeroOpen(st.heroOpen);
 }
 
+// -------------------------------------------------------------------------
+// Guided master-step state: done / attention / locked (audit 9.1)
+// -------------------------------------------------------------------------
+const STEP_TITLES = {
+  1: "Site",
+  2: "Open cabinet",
+  3: "Power",
+  4: "Aim & Connect",
+  5: "Go on air",
+};
+
+// Each step names the one thing that makes it complete. Steps 01 and 02 are
+// always reachable; the later steps open as the site becomes real.
+function stepDone(step) {
+  if (step === 1) return !st.onboarding.active;
+  if (step === 2) return installedModules().length > 0;
+  if (step === 3) {
+    const power = calculatePower();
+    return Boolean(power.n1Pass && power.failoverPass);
+  }
+  if (step === 4)
+    return st.microwave.system === "CELLULAR"
+      ? st.cellular.sweeps.some(Boolean)
+      : Boolean(calculateMicrowave().locked);
+  if (step === 5) return Boolean(launch.onAir);
+  return false;
+}
+
+function stepRequirement(step) {
+  if (step === 3 && !stepDone(2)) return "Fit at least one card in the cabinet in step 02 first.";
+  if (step === 4 && !stepDone(2)) return "Fit the cabinet cards in step 02 first.";
+  if (step === 5 && !stepDone(3)) return "Finish the -48V power checks in step 03 first.";
+  if (step === 5 && !stepDone(4))
+    return st.microwave.system === "CELLULAR"
+      ? "Run the sector sweeps in step 04 first."
+      : "Align and lock the backhaul link in step 04 first.";
+  return "";
+}
+
+// { state: "DONE" | "ATTENTION" | "LOCKED", reason }
+function stepState(step) {
+  const reason = stepRequirement(step);
+  if (reason && st.detail !== "ENGINEER") return { state: "LOCKED", reason };
+  if (stepDone(step)) return { state: "DONE", reason: "" };
+  return { state: "ATTENTION", reason: "" };
+}
+
+function allStepStates() {
+  return [1, 2, 3, 4, 5].map((step) => ({ step, ...stepState(step) }));
+}
+
+function renderLockedNotice() {
+  const notice = st.lockedNotice;
+  if (!notice) return "";
+  return `<div class="locked-notice" role="status">
+    <div><strong>Step ${String(notice.step).padStart(2, "0")} · ${escapeHTML(STEP_TITLES[notice.step] || "")} is locked</strong><span>${escapeHTML(notice.reason)}</span></div>
+    <div class="locked-notice-actions">
+      <button type="button" class="phase6-button" data-action="goto-step" data-value="${notice.goto || 2}">[ GO TO STEP ${String(notice.goto || 2).padStart(2, "0")} ]</button>
+      <button type="button" class="phase6-button" data-action="dismiss-locked-notice">[ CLOSE ]</button>
+    </div>
+  </div>`;
+}
+
+// The six gates shown from step 02 onward. They are the same six checks the
+// carrier acceptance audit uses, so nothing can pass here and fail there.
+function gateStrip() {
+  const audit = calculateAcceptance();
+  return `<div class="gate-strip" role="list" aria-label="Site readiness gates">${audit.checks
+    .map(
+      (check) =>
+        `<div class="gate ${check.pass ? "pass" : "fail"}" role="listitem" title="${escapeHTML(check.explanation)}"><span class="gate-dot"></span><small>${escapeHTML(check.title)}</small><strong>${check.pass ? "PASS" : "OPEN"}</strong></div>`
+    )
+    .join("")}</div>`;
+}
+
 function enterMasterStep(step) {
-  if (![1, 2, 3, 4, 5].includes(step)) return;
+  if (![1, 2, 3, 4, 5].includes(step)) return false;
+  const gate = stepState(step);
+  if (gate.state === "LOCKED") {
+    // A locked step explains itself in the drawer instead of navigating.
+    st.lockedNotice = { step, reason: gate.reason, goto: lockedStepFallback(step) };
+    renderDrawer();
+    const content = $("#drawer-content");
+    if (content) content.scrollTop = 0;
+    toast(gate.reason.toUpperCase());
+    return false;
+  }
+  st.lockedNotice = null;
   if (st.heroOpen) setHeroOpen(false);
   if (step > 1) st.onboarding.active = false;
   const previousStep = st.masterStep;
@@ -9549,6 +9771,15 @@ function enterMasterStep(step) {
     fitSite();
   }
   $("#drawer-content").scrollTop = 0;
+  return true;
+}
+
+// The step that unblocks a locked one, so the notice can offer a shortcut.
+function lockedStepFallback(step) {
+  if (step === 3) return 2;
+  if (step === 4) return 2;
+  if (step === 5) return stepDone(3) ? 4 : 3;
+  return 1;
 }
 
 // -------------------------------------------------------------------------
@@ -9693,6 +9924,12 @@ $("#drawer").addEventListener("click", (event) => {
     toast(`LINK LOCKED · ${calculateMicrowave().rsl.toFixed(1)} dBm · 2.40 V`);
   } else if (action === "cv-restore") {
     restoreCV(value);
+  } else if (action === "goto-step") {
+    st.lockedNotice = null;
+    enterMasterStep(Number(value));
+  } else if (action === "dismiss-locked-notice") {
+    st.lockedNotice = null;
+    renderDrawer();
   } else if (action === "dismiss-restore-notice") {
     st.restoreNotice = false;
     renderDrawer();
@@ -10572,6 +10809,11 @@ window.TowerStudio.requestProfileChange = requestProfileChange;
 window.TowerStudio.confirmProfileChange = confirmProfileChange;
 window.TowerStudio.cancelProfileChange = cancelProfileChange;
 window.TowerStudio.resetSlotsToProfile = resetSlotsToProfile;
+window.TowerStudio.stepState = stepState;
+window.TowerStudio.stepDone = stepDone;
+window.TowerStudio.stepRequirement = stepRequirement;
+window.TowerStudio.allStepStates = allStepStates;
+window.TowerStudio.gateStrip = gateStrip;
 window.TowerStudio.setDetailLevel = setDetailLevel;
 window.TowerStudio.readDetailLevel = readDetailLevel;
 window.TowerStudio.normalizeState = normalizeState;
