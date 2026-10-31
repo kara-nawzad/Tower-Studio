@@ -2033,6 +2033,240 @@ function buildTerrain() {
   register(group, { id: "terrain", kind: "terrain", title: ENVIRONMENTS[st.env].title });
 }
 
+// -------------------------------------------------------------------------
+// Ambient environment motion
+// -------------------------------------------------------------------------
+// Every environment carries the same amount of life: something growing that
+// leans as a gust crosses the site, something drifting through the air, and
+// birds where the sky is open. Nothing here casts a shadow, nothing is
+// selectable or registered, and every material is one the site already uses.
+const AMBIENT_PLAN = {
+  MOUNTAIN_PEAK: {
+    blades: 0,
+    motes: 22,
+    drifts: 4,
+    birds: 0,
+    wind: 1.45,
+    air: [0.5, 4.4],
+    reach: 26,
+    mote: [0.15, 0.36],
+  },
+  RURAL_GREENFIELD: {
+    blades: 56,
+    motes: 18,
+    drifts: 3,
+    birds: 3,
+    wind: 1,
+    air: [0.3, 3.1],
+    reach: 24,
+    mote: [0.16, 0.34],
+  },
+  URBAN_ROOFTOP: {
+    blades: 0,
+    motes: 12,
+    drifts: 3,
+    birds: 2,
+    wind: 0.6,
+    air: [0.2, 1.5],
+    reach: 9,
+    mote: [0.08, 0.17],
+    rise: 0.42,
+  },
+  EMERGENCY_DISASTER: {
+    blades: 0,
+    motes: 20,
+    drifts: 3,
+    birds: 2,
+    wind: 1.3,
+    air: [0.3, 3.2],
+    reach: 20,
+    mote: [0.12, 0.26],
+    swirl: 0.9,
+  },
+};
+
+// Crop strips sit outside the security fence, close enough to stay in frame
+// on a phone in portrait where the compound fills the width.
+const CROP_STRIPS = [
+  { x: [-13, 13], z: [15, 21.5], count: 16 },
+  { x: [-13, 13], z: [-21.5, -15], count: 16 },
+  { x: [-19, -15], z: [-12, 12], count: 12 },
+  { x: [15, 19], z: [-12, 12], count: 12 },
+];
+
+const ambientVisuals = { root: null, blades: [], motes: [], drifts: [], birds: [] };
+
+// Deterministic hash: the field looks the same after every rebuild instead of
+// rearranging itself each time the tower height changes.
+function ambientNoise(seed, salt) {
+  const value = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function ambientObject(object) {
+  object.castShadow = false;
+  object.receiveShadow = false;
+  object.raycast = () => {};
+  return object;
+}
+
+function buildAmbient() {
+  ambientVisuals.blades = [];
+  ambientVisuals.motes = [];
+  ambientVisuals.drifts = [];
+  ambientVisuals.birds = [];
+  const plan = AMBIENT_PLAN[st.env] || AMBIENT_PLAN.RURAL_GREENFIELD;
+  const group = new T.Group();
+  siteRoot.add(group);
+  ambientVisuals.root = group;
+  const blob = new T.SphereGeometry(1, 7, 7);
+
+  if (plan.blades) {
+    // One geometry for the whole build, pivoted at its base so a rotation
+    // bends the stem instead of sliding the blade across the ground. The
+    // stems are crop-height (~1-2 m) so the sway still reads on a phone,
+    // where a metre of world space is barely ten pixels.
+    const blade = new T.BoxGeometry(0.24, 1, 0.24);
+    blade.translate(0, 0.5, 0);
+    let seed = 0;
+    CROP_STRIPS.forEach((strip, stripIndex) => {
+      const spanX = strip.x[1] - strip.x[0];
+      const spanZ = strip.z[1] - strip.z[0];
+      const alongX = spanX >= spanZ;
+      for (let i = 0; i < strip.count; i += 1) {
+        const even = (i + 0.5) / strip.count;
+        const scatter = ambientNoise(seed + 11, stripIndex + 5);
+        const x = strip.x[0] + spanX * (alongX ? even : scatter);
+        const z = strip.z[0] + spanZ * (alongX ? scatter : even);
+        const object = ambientObject(new T.Mesh(blade, MAT.green));
+        object.position.set(x, 0, z);
+        object.scale.y = 0.9 + ambientNoise(seed + 3, stripIndex + 1) * 1.2;
+        object.rotation.y = ambientNoise(seed + 5, stripIndex + 2) * Math.PI;
+        group.add(object);
+        ambientVisuals.blades.push({
+          object,
+          sway: 0.11 + ambientNoise(seed + 13, stripIndex) * 0.15,
+          speed: 0.0015 + ambientNoise(seed + 17, stripIndex + 2) * 0.0012,
+          // Phase lags downwind so the gust reads as travelling, not global.
+          phase: (x + z) * 0.24 + ambientNoise(seed + 19, stripIndex) * 6.28,
+        });
+        seed += 1;
+      }
+    });
+  }
+
+  for (let i = 0; i < plan.motes; i += 1) {
+    const size = plan.mote[0] + ambientNoise(i + 2, 1) * (plan.mote[1] - plan.mote[0]);
+    const object = ambientObject(new T.Mesh(blob, SMOKE));
+    object.scale.setScalar(size);
+    group.add(object);
+    ambientVisuals.motes.push({
+      object,
+      size,
+      span: plan.reach * 2,
+      x: (ambientNoise(i + 23, 2) - 0.5) * plan.reach * 2,
+      y: plan.air[0] + ambientNoise(i + 29, 3) * (plan.air[1] - plan.air[0]),
+      z: (ambientNoise(i + 31, 4) - 0.5) * plan.reach * 1.2,
+      bob: 0.2 + ambientNoise(i + 37, 5) * 0.55,
+      speed: (0.9 + ambientNoise(i + 41, 6) * 1.7) * plan.wind,
+      rise: plan.rise ? plan.rise * (0.5 + ambientNoise(i + 43, 7)) : 0,
+      swirl: plan.swirl ? plan.swirl * (0.6 + ambientNoise(i + 47, 8)) : 0,
+      phase: ambientNoise(i + 53, 9) * 6.28,
+      age: ambientNoise(i + 59, 10) * plan.reach * 2,
+    });
+  }
+
+  for (let i = 0; i < plan.drifts; i += 1) {
+    const object = ambientObject(new T.Mesh(blob, SMOKE));
+    const width = 5 + ambientNoise(i + 61, 11) * 7;
+    object.scale.set(width, 0.45 + ambientNoise(i + 67, 12) * 0.5, width * 0.62);
+    group.add(object);
+    ambientVisuals.drifts.push({
+      object,
+      span: plan.reach * 2.6,
+      x: (ambientNoise(i + 71, 13) - 0.5) * plan.reach * 2.6,
+      y: plan.air[0] + ambientNoise(i + 73, 14) * (plan.air[1] - plan.air[0]),
+      z: (ambientNoise(i + 79, 15) - 0.5) * plan.reach * 1.1,
+      speed: (0.28 + ambientNoise(i + 83, 16) * 0.22) * plan.wind,
+      phase: ambientNoise(i + 89, 17) * 6.28,
+      age: ambientNoise(i + 97, 18) * plan.reach * 2.6,
+    });
+  }
+
+  if (plan.birds) {
+    const wing = new T.BoxGeometry(0.6, 0.035, 0.19);
+    for (let i = 0; i < plan.birds; i += 1) {
+      const bird = new T.Group();
+      const body = ambientObject(new T.Mesh(blob, MAT.dark));
+      body.scale.set(0.32, 0.15, 0.15);
+      bird.add(body);
+      const wings = [-1, 1].map((side) => {
+        const panel = ambientObject(new T.Mesh(wing, MAT.dark));
+        panel.position.x = side * 0.34;
+        bird.add(panel);
+        return panel;
+      });
+      group.add(bird);
+      ambientVisuals.birds.push({
+        object: bird,
+        wings,
+        radius: 7 + ambientNoise(i + 101, 19) * 6,
+        height: 6.5 + ambientNoise(i + 103, 20) * 3.5,
+        speed: 0.00013 + ambientNoise(i + 107, 21) * 0.00011,
+        flap: 4.5 + ambientNoise(i + 109, 22) * 2.2,
+        phase: ambientNoise(i + 113, 23) * 6.28,
+      });
+    }
+  }
+}
+
+function updateAmbientVisuals(now, dt) {
+  if (!ambientVisuals.root) return;
+  if (reducedMotionQuery.matches) return;
+  ambientVisuals.blades.forEach((blade) => {
+    const gust = 0.55 + 0.45 * Math.sin(now * 0.00085 - blade.phase);
+    blade.object.rotation.z = Math.sin(now * blade.speed + blade.phase) * blade.sway * gust;
+    blade.object.rotation.x =
+      Math.cos(now * blade.speed * 0.72 + blade.phase) * blade.sway * 0.45 * gust;
+  });
+  ambientVisuals.motes.forEach((mote) => {
+    mote.age += dt * mote.speed;
+    const span = mote.span;
+    const x = ((((mote.x + mote.age) % span) + span) % span) - span / 2;
+    const swirl = mote.swirl ? Math.sin(mote.age * 0.55 + mote.phase) * mote.swirl : 0;
+    const rise = mote.rise ? (mote.age * mote.rise) % 1.3 : 0;
+    mote.object.position.set(
+      x,
+      mote.y + rise + Math.sin(mote.age * 0.5 + mote.phase) * mote.bob * 0.35,
+      mote.z + swirl
+    );
+    mote.object.scale.setScalar(mote.size * (0.78 + 0.32 * Math.sin(mote.age * 0.7 + mote.phase)));
+  });
+  ambientVisuals.drifts.forEach((drift) => {
+    drift.age += dt * drift.speed;
+    const span = drift.span;
+    const x = ((((drift.x + drift.age) % span) + span) % span) - span / 2;
+    drift.object.position.set(
+      x,
+      drift.y + Math.sin(drift.age * 0.22 + drift.phase) * 0.32,
+      drift.z
+    );
+  });
+  ambientVisuals.birds.forEach((bird) => {
+    const angle = now * bird.speed + bird.phase;
+    bird.object.position.set(
+      Math.cos(angle) * bird.radius,
+      bird.height + Math.sin(angle * 2.3 + bird.phase) * 0.55,
+      Math.sin(angle) * bird.radius
+    );
+    bird.object.rotation.y = -angle - Math.PI / 2;
+    bird.object.rotation.z = Math.sin(angle * 2.3) * 0.13;
+    const flap = Math.sin(now * 0.006 * bird.flap + bird.phase) * 0.55;
+    bird.wings[0].rotation.z = flap;
+    bird.wings[1].rotation.z = -flap;
+  });
+}
+
 function makePlinth(x, z, width = 1.9, id = `plinth-${x}-${z}`, roundBase = false) {
   const group = new T.Group();
   group.position.set(x, 0, z);
@@ -4824,6 +5058,11 @@ function buildLightning() {
 // Scene lifecycle and selection / inspection
 // -------------------------------------------------------------------------
 function clearSite() {
+  ambientVisuals.root = null;
+  ambientVisuals.blades = [];
+  ambientVisuals.motes = [];
+  ambientVisuals.drifts = [];
+  ambientVisuals.birds = [];
   aiBuild.layers = [];
   aiBuild.cards = [];
   aiBuild.powerRoutes = [];
@@ -4910,6 +5149,7 @@ function rebuildSite() {
   buildCellular();
   buildLaunchFX();
   buildLightning();
+  buildAmbient();
   if (aiBuild.running) prepareAIBuildVisuals();
   updateSelection();
   renderer.shadowMap.needsUpdate = true;
@@ -11156,6 +11396,7 @@ function animate() {
   updateLaunchVisuals(now);
   updateRackVisuals(now, dt);
   updateAIFeatures(now, dt);
+  updateAmbientVisuals(now, dt);
   const ease = 1 - Math.pow(0.002, dt);
   cameraCurrent.theta += (cameraGoal.theta - cameraCurrent.theta) * ease;
   cameraCurrent.phi += (cameraGoal.phi - cameraCurrent.phi) * ease;
@@ -11212,6 +11453,9 @@ window.TowerStudio = {
   updateHeroPointer,
   resetHeroPointer,
   updateHeroMotion,
+  ambientVisuals,
+  updateAmbient: updateAmbientVisuals,
+  ambientPlan: AMBIENT_PLAN,
   aauModel,
   calculateSweep,
   sectorBeamGeometry,

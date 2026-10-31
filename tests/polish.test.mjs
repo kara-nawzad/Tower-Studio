@@ -135,3 +135,104 @@ test("a reduced-motion preference skips the manual staging entirely", () => {
   assert.equal(studio.aiBuild.running, false);
   dom.window.close();
 });
+
+test("every environment carries ambient life, and rural carries the most", () => {
+  const { studio, dom } = createHeadlessStudio({ width: 1440, height: 900 });
+  studio.state.onboarding.active = false;
+  const motion = {};
+  for (const env of Object.keys(studio.environments)) {
+    studio.state.env = env;
+    studio.rebuild();
+    // Ambient decoration is not a component: rebuilding it must not change
+    // the parts list.
+    const before = studio.registry.size;
+    studio.rebuild();
+    assert.equal(studio.registry.size, before, `${env} gained a registry entry`);
+    assert.equal(studio.registry.has("ambient"), false, "ambient is not a part");
+    const parts =
+      studio.ambientVisuals.blades.length +
+      studio.ambientVisuals.motes.length +
+      studio.ambientVisuals.drifts.length +
+      studio.ambientVisuals.birds.length;
+    motion[env] = parts;
+    assert.ok(parts > 0, `${env} has something moving in the scene`);
+    // Nor in the picker, nor in the shadow pass.
+    const sample = [
+      ...studio.ambientVisuals.blades,
+      ...studio.ambientVisuals.motes,
+      ...studio.ambientVisuals.drifts,
+    ].map((part) => part.object);
+    sample.forEach((object) => {
+      assert.equal(object.castShadow, false, "ambient parts cast no shadow");
+      assert.equal(object.raycast(), undefined, "ambient parts are not pickable");
+    });
+  }
+  assert.ok(
+    motion.RURAL_GREENFIELD >= motion.MOUNTAIN_PEAK,
+    `rural ${motion.RURAL_GREENFIELD} vs mountain ${motion.MOUNTAIN_PEAK}`
+  );
+  // The crop field only grows on the greenfield site.
+  studio.state.env = "RURAL_GREENFIELD";
+  studio.rebuild();
+  assert.ok(studio.ambientVisuals.blades.length >= 40, "the field is planted");
+  studio.state.env = "MOUNTAIN_PEAK";
+  studio.rebuild();
+  assert.equal(studio.ambientVisuals.blades.length, 0, "no crops on the rock peak");
+  dom.window.close();
+});
+
+test("the ambient layer moves with the wind and stops for reduced motion", () => {
+  const { studio, dom } = createHeadlessStudio({ width: 1440, height: 900 });
+  studio.state.onboarding.active = false;
+  studio.state.env = "RURAL_GREENFIELD";
+  studio.rebuild();
+  const blade = studio.ambientVisuals.blades[0].object;
+  const mote = studio.ambientVisuals.motes[0].object;
+  const bird = studio.ambientVisuals.birds[0].object;
+  const pose = () => [
+    blade.rotation.z,
+    mote.position.x,
+    mote.position.y,
+    mote.scale.x,
+    bird.position.x,
+    bird.position.y,
+    bird.rotation.y,
+  ];
+  studio.updateAmbient(1000, 0.016);
+  const first = pose();
+  studio.updateAmbient(4000, 0.016);
+  const second = pose();
+  assert.ok(
+    first.some((value, index) => Math.abs(value - second[index]) > 1e-4),
+    "the crops lean, the dust drifts and the birds circle"
+  );
+  // A gust travels: two blades on opposite sides of the field are out of step.
+  const ends = [studio.ambientVisuals.blades[0], studio.ambientVisuals.blades[40]];
+  assert.ok(Math.abs(ends[0].object.rotation.z - ends[1].object.rotation.z) > 1e-3);
+
+  const still = createHeadlessStudio({
+    width: 1440,
+    height: 900,
+    reducedMotion: true,
+  });
+  still.studio.state.onboarding.active = false;
+  still.studio.state.env = "RURAL_GREENFIELD";
+  still.studio.rebuild();
+  const quiet = [
+    still.studio.ambientVisuals.blades[0].object.rotation.z,
+    still.studio.ambientVisuals.motes[0].object.position.x,
+    still.studio.ambientVisuals.birds[0].object.position.y,
+  ];
+  still.studio.updateAmbient(8000, 0.016);
+  assert.deepEqual(
+    [
+      still.studio.ambientVisuals.blades[0].object.rotation.z,
+      still.studio.ambientVisuals.motes[0].object.position.x,
+      still.studio.ambientVisuals.birds[0].object.position.y,
+    ],
+    quiet,
+    "reduced motion holds the scene still"
+  );
+  dom.window.close();
+  still.dom.window.close();
+});

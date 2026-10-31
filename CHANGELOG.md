@@ -97,6 +97,14 @@ cabinet`, `03 Power`, `04 Aim & Connect` → `4A Backhaul` / `4B Sectors`,
   then the cabinet and power routes, then the antennas, over 1.8 s. It is
   staging only — no state is touched and nothing launches — and
   `prefers-reduced-motion` skips it.
+- **Ambient life in every environment.** The scene now carries weather and
+  wildlife that moves with the site: a crop field that leans as a gust crosses
+  it, dust and spindrift drifting downwind, low mist or haze sheets sweeping
+  past, and birds circling where the sky is open. Rural greenfield gets the
+  planted field, three birds and drifting dust; the mountain peak keeps its
+  fast spindrift and mist; the rooftop gets heat haze; the disaster outpost
+  gets swirling dust. None of it is selectable, registered or shadow-casting,
+  and `prefers-reduced-motion` freezes it.
 - **One typeface set.** `<code>`, `<kbd>`, `<samp>` and `<pre>` were falling back
   to the browser's monospace; the step 04 Backhaul/Sectors chips, the AI search
   field, the AI blueprint chips and the drawer toggle all carried emoji that

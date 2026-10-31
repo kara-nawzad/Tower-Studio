@@ -303,6 +303,20 @@ Recorded so they can be reversed deliberately:
 - **The vendored Three.js is committed.** 603 kB in `vendor/` buys a site that
   still works when the CDN is blocked; `vendor/THREE-LICENSE.txt` carries the MIT
   notice and `vendor/**` is excluded from ESLint and Prettier.
+- **Ambient motion is decoration, not a component.** The crop field, motes,
+  mist sheets and birds are built into an unregistered group with `raycast`
+  disabled, so they never appear in the parts list, never take a click, and
+  never cast a shadow — clicking through them still selects the real
+  component behind. They reuse existing materials (`MAT.green`, `SMOKE`,
+  `MAT.dark`) rather than introducing new colours.
+- **Ambient counts per environment** (blades / motes / drifts / birds):
+  mountain 0/22/4/0, rural 56/18/3/3, rooftop 0/12/3/2, disaster 0/20/3/2.
+  Measured in Chromium as changed pixels between frames 350 ms apart, median
+  of five pairs, ambient layer on minus off: phone — mountain 868, rural 994,
+  rooftop 3 383, disaster 3 992; laptop — mountain 6 293, rural 7 820,
+  rooftop 11 242, disaster 13 704. Rural is the busiest of the two the brief
+  compares, at both viewports. Update cost is 0.042 ms per frame for the 73
+  rural parts.
 - **The original `herotower.PNG` is untouched** (a test asserts its exact byte
   size) and remains the last `<picture>` fallback.
 
