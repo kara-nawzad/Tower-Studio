@@ -1264,11 +1264,35 @@ function sourceLabel(source = powerSim.activeSource) {
   );
 }
 
+// The radio load slider is quoted at the reference configuration: six populated
+// radio positions and three sectors on air at 40 W (46 dBm). Real sites scale
+// from there, so the effective DC load is the slider value times how far the
+// current site departs from that reference (audit 9.3).
+const RADIO_REFERENCE_COUNT = 6;
+const TX_REFERENCE_WATTS = 40;
+
+function radioLoadFactors() {
+  const radioFactor = clamp(st.rack.radioCount / RADIO_REFERENCE_COUNT, 0, 2);
+  const sectors = st.cellular.sectors;
+  const txFactor =
+    sectors.reduce(
+      (sum, sector) => sum + (sector.onAir ? txPowerWatts(sector.txPower) / TX_REFERENCE_WATTS : 0),
+      0
+    ) / (sectors.length || 1);
+  return { radioFactor, txFactor, factor: radioFactor * txFactor };
+}
+
+function effectiveRadioLoadKw() {
+  return st.power.radioLoadKw * radioLoadFactors().factor;
+}
+
 function calculatePower() {
   const p = st.power;
   const rack = calculateRack();
   const microwave = calculateMicrowave();
-  const dcLoad = p.radioLoadKw + rack.loadKw + microwave.powerKw;
+  const radio = radioLoadFactors();
+  const radioLoad = p.radioLoadKw * radio.factor;
+  const dcLoad = radioLoad + rack.loadKw + microwave.powerKw;
   const required = Math.max(1, Math.ceil(dcLoad / 3));
   const installed = p.autoRectifiers ? Math.min(8, required + 1) : p.rectifiers;
   const failed = powerSim.failedRectifier !== null && powerSim.failedRectifier < installed ? 1 : 0;
@@ -1299,6 +1323,10 @@ function calculatePower() {
   const n1Pass = installed >= required + 1 && p.branches.rectifier;
   return {
     dcLoad,
+    radioLoad,
+    radioLoadReference: p.radioLoadKw,
+    radioFactor: radio.radioFactor,
+    txFactor: radio.txFactor,
     rackLoad: rack.loadKw,
     microwaveLoad: microwave.powerKw,
     required,
@@ -5397,10 +5425,10 @@ function rangeProgress(value, min, max) {
 function rectifierControls() {
   const calc = calculatePower();
   return `<div class="section-label">Telecom DC load</div><div class="control-card">
-    <div class="control-row"><label for="radio-load">Radio load on -48V bus</label><output class="control-value" id="radio-load-value">${st.power.radioLoadKw.toFixed(1)} kW</output></div>
+    <div class="control-row"><label for="radio-load">Radio load at reference configuration</label><output class="control-value" id="radio-load-value">${st.power.radioLoadKw.toFixed(1)} kW</output></div>
     <input type="range" id="radio-load" data-power-input="radio-load" min="0.5" max="12" step="0.5" value="${st.power.radioLoadKw}" style="--range-progress:${rangeProgress(st.power.radioLoadKw, 0.5, 12)}%">
     <div class="range-limits"><span>0.5 kW</span><span>12 kW</span></div>
-    <p class="control-note">Example: a 5 kW load needs N = 2 working modules, plus one spare = 3 installed modules.</p>
+    <p class="control-note">Reference configuration = 6 populated radio positions and 3 sectors on air at 40 W (46 dBm). Effective load now: <strong data-live="radio-load-effective">${effectiveRadioLoadKw().toFixed(2)} kW</strong> (× ${radioLoadFactors().radioFactor.toFixed(2)} radios, × ${radioLoadFactors().txFactor.toFixed(2)} TX power). Example: a 5 kW load needs N = 2 working modules, plus one spare = 3 installed modules.</p>
   </div>
   <div class="section-label">N+1 module configuration</div><div class="control-card">
     <div class="control-row"><label for="rectifier-count">Installed 3 kW modules</label><output class="control-value" id="rectifier-count-value">${calc.installed}</output></div>
@@ -5785,7 +5813,7 @@ function renderRackConfigure() {
       <button class="rack-action secondary" data-action="rack-select" data-value="rack-cabinet">[ Focus Complete Cabinet ]</button>
     </div>
     <div class="section-label">Radio shelf population</div>
-    <div class="control-card rack-control"><div class="control-row"><label for="rack-radio-count">${escapeHTML(slotName("radio"))} positions</label><output class="control-value" id="rack-radio-count-value">${st.rack.radioCount} / 12</output></div><input type="range" id="rack-radio-count" data-rack-input="radio-count" min="0" max="12" step="1" value="${st.rack.radioCount}" style="--range-progress:${rangeProgress(st.rack.radioCount, 0, 12)}%"><div class="range-limits"><span>EMPTY 6U SHELF</span><span>12 RADIO UNITS</span></div></div>
+    <div class="control-card rack-control"><div class="control-row"><label for="rack-radio-count">${escapeHTML(slotName("radio"))} positions <span class="tag">SCALES RADIO LOAD</span></label><output class="control-value" id="rack-radio-count-value">${st.rack.radioCount} / 12</output></div><input type="range" id="rack-radio-count" data-rack-input="radio-count" min="0" max="12" step="1" value="${st.rack.radioCount}" style="--range-progress:${rangeProgress(st.rack.radioCount, 0, 12)}%"><div class="range-limits"><span>EMPTY 6U SHELF</span><span>12 RADIO UNITS</span></div></div>
     <div class="section-label">Slot management <span class="tag">LIVE kW / HOURS / Gbps</span></div>
     <div class="slot-manager">${Object.entries(labels)
       .filter(([key]) => isRackSlotCurated(key))
@@ -8031,6 +8059,7 @@ function updateLiveReadouts() {
     temperature: `${powerSim.temperature.toFixed(1)} °C`,
     "fuel-remaining": `${powerSim.fuelRemainingL.toFixed(0)} L`,
     "fuel-rate": `${calc.fuelRate.toFixed(2)} L/h`,
+    "radio-load-effective": `${effectiveRadioLoadKw().toFixed(2)} kW`,
     "rack-load": `${rack.loadKw.toFixed(3)} kW`,
     "rack-autonomy": `${calc.autonomy.toFixed(2)} h`,
     "rack-gbps": `${rack.backhaulGbps} Gbps`,

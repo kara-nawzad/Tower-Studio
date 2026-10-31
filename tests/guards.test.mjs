@@ -340,8 +340,15 @@ test("default-state engineering outputs are locked", () => {
     active: [1],
     available: true,
   });
+  // radioLoad / radioFactor / txFactor were added by the Phase 1 engine change
+  // "radio count and sector power affect DC load". At the default site they are
+  // reference (3 kW x 1.00 x 1.00), so every other number below is unchanged.
   assert.deepEqual(plain(powerRest), {
     dcLoad: 3.605,
+    radioLoad: 3,
+    radioLoadReference: 3,
+    radioFactor: 1,
+    txFactor: 1,
     rackLoad: 0.56,
     microwaveLoad: 0.045,
     required: 2,

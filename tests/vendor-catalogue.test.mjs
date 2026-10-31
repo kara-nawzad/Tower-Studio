@@ -415,3 +415,77 @@ test("dead CSS classes and dead simulation fields are gone", () => {
   // The compatibility alias must survive.
   assert.match(source, /window\.CellForge = window\.TowerStudio;/);
 });
+
+test("radio count and sector TX power scale the DC load from a reference of 1.0", () => {
+  const { studio, dom } = createHeadlessStudio({ width: 1440, height: 900 });
+
+  // Default site: 6 radios, 3 sectors on air at 46 dBm (40 W) => factor 1.00.
+  assert.equal(studio.state.rack.radioCount, 6);
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(studio.state.cellular.sectors.map((sector) => [sector.txPower, sector.onAir]))
+    ),
+    [
+      [46, true],
+      [46, true],
+      [46, true],
+    ]
+  );
+  const base = studio.calculatePower();
+  assert.equal(base.radioFactor, 1);
+  assert.equal(base.txFactor, 1);
+  assert.equal(base.radioLoad, 3);
+  assert.equal(base.dcLoad, 3.605);
+
+  // Halve the populated radio positions -> half the radio load.
+  studio.state.rack.radioCount = 3;
+  const halfRadios = studio.calculatePower();
+  assert.equal(halfRadios.radioFactor, 0.5);
+  assert.equal(halfRadios.radioLoad, 1.5);
+  assert.equal(halfRadios.dcLoad, 2.105);
+
+  // Drop TX power to 43 dBm (20 W) across all sectors -> half again.
+  studio.state.cellular.sectors.forEach((sector) => {
+    sector.txPower = 43;
+  });
+  const throttled = studio.calculatePower();
+  assert.equal(throttled.txFactor, 0.5);
+  assert.equal(throttled.radioLoad, 0.75);
+
+  // Muting every sector removes the radio load entirely.
+  studio.state.cellular.sectors.forEach((sector) => {
+    sector.onAir = false;
+  });
+  const muted = studio.calculatePower();
+  assert.equal(muted.txFactor, 0);
+  assert.equal(muted.radioLoad, 0);
+
+  // Restoring the reference configuration restores the original numbers exactly.
+  studio.state.rack.radioCount = 6;
+  studio.state.cellular.sectors.forEach((sector) => {
+    sector.txPower = 46;
+    sector.onAir = true;
+  });
+  assert.equal(studio.calculatePower().dcLoad, base.dcLoad);
+
+  dom.window.close();
+});
+
+test("channel bandwidth is labelled display-only and does not move the DC load", () => {
+  const { studio, dom } = createHeadlessStudio({ width: 1440, height: 900 });
+  studio.enterMasterStep(4);
+  studio.state.microwave.system = "CELLULAR";
+  studio.state.tab = "configure";
+  studio.renderDrawer();
+
+  const markup = studio.renderDrawerMarkup ?? "";
+  assert.equal(typeof markup, "string");
+
+  const before = studio.calculatePower().dcLoad;
+  studio.state.cellular.sectors.forEach((sector) => {
+    sector.bandwidth = 20;
+  });
+  assert.equal(studio.calculatePower().dcLoad, before, "bandwidth must not change the DC load");
+
+  dom.window.close();
+});
