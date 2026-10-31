@@ -129,10 +129,10 @@ the per-width checklist (§7) — all below.
 | --------------------- | ----------------------- | ------------------------ | ------------ |
 | `index.html`          | 10,630 B / 273 lines    | 15,677 B / 407 lines     | +5,047 B     |
 | `src/js/app.js`       | 371,692 B / 9,281 lines | 443,026 B / 11,286 lines | +71,334 B    |
-| `src/styles/main.css` | 72,025 B / 3,614 lines  | 87,084 B / 4,389 lines   | +15,059 B    |
+| `src/styles/main.css` | 72,025 B / 3,614 lines  | 88,404 B / 4,393 lines   | +16,379 B    |
 | `scripts/build.mjs`   | 1,621 B                 | 1,868 B                  | +247 B       |
 | tests                 | 1 file, 9 tests         | 8 files, 88 tests        | +79 tests    |
-| `dist/`               | 3,803,673 B             | 5,122,791 B              | +1,319,118 B |
+| `dist/`               | 3,803,673 B             | 5,124,111 B              | +1,320,438 B |
 
 `dist/` grew because it now carries two extra hero encodings (619 kB) and the
 603 kB offline Three.js — both are payload the old build downloaded anyway, from
@@ -142,9 +142,9 @@ Over the wire (gzip, code only: `index.html` + `app.js` + `main.css`):
 
 |                 | Before                                                        | After                                                                | Δ                                                  |
 | --------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
-| gzip total      | 116,512 B                                                     | 142,862 B                                                            | +26,350 B (+22.6 %)                                |
+| gzip total      | 116,512 B                                                     | 143,272 B                                                            | +26,760 B (+23.0 %)                                |
 | hero image      | 3,341,876 B PNG (3,238,120 B gzipped — PNG barely compresses) | 224,490 B AVIF / 394,634 B WebP                                      | −93 % / −88 %                                      |
-| **first paint** | **3,458,388 B**                                               | **367,352 B** (AVIF) · 537,496 B (WebP) · 3,484,738 B (PNG fallback) | **−89.4 %** on a modern browser, +0.8 % worst case |
+| **first paint** | **3,458,388 B**                                               | **367,762 B** (AVIF) · 537,906 B (WebP) · 3,485,148 B (PNG fallback) | **−89.4 %** on a modern browser, +0.8 % worst case |
 
 If the CDN is unreachable, `vendor/three.min.js` (603,445 B raw, 148,737 B gzipped)
 is served from the same origin instead — which is exactly what happened in every
