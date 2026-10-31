@@ -633,7 +633,7 @@ body.hero-active #selection-tag {
 }
 
 .hero-tab {
-  --hero-aspect: 1.790822;
+  --hero-aspect: 1.791045;
   --hero-px: 0px;
   --hero-py: 0px;
   --hero-rx: 0deg;
@@ -663,39 +663,71 @@ body.hero-active #selection-tag {
   perspective: 1400px;
 }
 
+/*
+  The hero picture is full-bleed, never letterboxed. The box keeps the
+  artwork's own aspect ratio — so object-fit can never distort it — and is
+  sized to *cover* the stage on both axes, then cropped by .hero-stage. There is
+  therefore never an empty band of flat blue above or below the picture, at any
+  window shape.
+
+  --hero-focus-x / --hero-focus-y choose which slice survives the crop: the
+  picture is anchored so that its own (focus) point lands at the same fraction
+  of the viewport. A landscape laptop crops a few per cent off the edges; a
+  portrait phone keeps only the middle third of the width, so the focus slides
+  right to keep the tower, the shelter and the generator in frame.
+
+  --hero-bleed is the headroom that lets the pointer parallax and the tilt move
+  the picture without ever exposing an edge (see heroMotion.maxShift* in
+  app.js, which is clamped to 3% of the viewport to stay inside it).
+*/
 .hero-artwork {
-  /*
-    Zoomed out and fitted: the whole illustration sits inside the stage with a
-    small margin, so nothing is cropped on a phone or on a laptop. The box keeps
-    the artwork's own aspect ratio, which means object-fit can never distort it
-    either. The blur layer behind it fills the remaining stage with the same
-    colours instead of empty paper.
-  */
-  --hero-fit: 0.94;
+  --hero-focus-x: 50%;
+  --hero-focus-y: 50%;
+  --hero-bleed: 1.08;
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(calc(94vw), calc(94vh * var(--hero-aspect)));
-  height: min(calc(94vh), calc(94vw / var(--hero-aspect)));
-  transform: translate3d(calc(-50% + var(--hero-px, 0px)), calc(-50% + var(--hero-py, 0px)), 0)
+  left: var(--hero-focus-x);
+  top: var(--hero-focus-y);
+  width: max(calc(100vw * var(--hero-bleed)), calc(100vh * var(--hero-aspect) * var(--hero-bleed)));
+  width: max(
+    calc(100vw * var(--hero-bleed)),
+    calc(100dvh * var(--hero-aspect) * var(--hero-bleed))
+  );
+  height: max(
+    calc(100vh * var(--hero-bleed)),
+    calc(100vw / var(--hero-aspect) * var(--hero-bleed))
+  );
+  height: max(
+    calc(100dvh * var(--hero-bleed)),
+    calc(100vw / var(--hero-aspect) * var(--hero-bleed))
+  );
+  transform: translate3d(
+      calc(var(--hero-focus-x) * -1 + var(--hero-px, 0px)),
+      calc(var(--hero-focus-y) * -1 + var(--hero-py, 0px)),
+      0
+    )
     rotateX(var(--hero-rx, 0deg)) rotateY(var(--hero-ry, 0deg));
   transform-style: preserve-3d;
   will-change: transform;
   user-select: none;
 }
 
-/* A defocused copy of the same picture fills the letterbox on any shape of
-   screen, so the fitted artwork never floats on empty paper. */
-.hero-backdrop {
-  position: absolute;
-  inset: -14%;
+/* A hotspot carried off-screen by the crop is hidden, not half-clipped. */
+.hero-hotspot.is-offstage {
+  visibility: hidden;
   pointer-events: none;
-  background-image: url("../../herotower-1200.webp"), url("../../herotower.PNG");
-  background-size: cover;
-  background-position: center;
-  filter: blur(42px) saturate(1.1);
-  transform: scale(1.2);
-  opacity: 0.62;
+}
+
+/* Portrait windows see a narrow slice of a landscape picture: slide the focus
+   right so the site stays in frame instead of the empty valley on its left. */
+@media (orientation: portrait) {
+  .hero-artwork {
+    --hero-focus-x: 58%;
+  }
+}
+@media (max-width: 767px) and (orientation: portrait) {
+  .hero-artwork {
+    --hero-focus-x: 60%;
+  }
 }
 
 .hero-image {
@@ -1154,6 +1186,9 @@ body.hero-active #selection-tag {
 .hero-note {
   position: absolute;
   z-index: 6;
+  /* app.js nudges the callout back inside the viewport when a pin sits close to
+     an edge (a portrait phone crop does exactly that). */
+  margin-left: var(--note-nudge, 0px);
   width: 224px;
   padding: 9px 11px 10px;
   background: rgba(255, 255, 255, 0.97);
@@ -4356,23 +4391,17 @@ input[type="range"]::-moz-range-thumb {
     touch-action: none;
   }
   /*
-    Phone: the old rule sized the artwork to 82vh and let the sides fall off the
-    screen, so most of the scene was cropped away. The whole picture now fits
-    the width and floats above the bottom edge, with the blurred copy of itself
-    filling the gap.
+    Phone: the same full-bleed picture. Only the tilt differs — a phone has no
+    pointer, so the artwork never rocks back on its X axis, and the focus is
+    pushed right (--hero-focus-x: 60%) to keep the tower in frame.
   */
   .hero-artwork {
-    top: auto;
-    bottom: 18vh;
-    bottom: 18dvh;
-    width: min(94vw, calc(94vh * var(--hero-aspect)));
-    height: min(calc(94vh), calc(94vw / var(--hero-aspect)));
-    transform: translate3d(calc(-50% + var(--hero-px, 0px)), calc(var(--hero-py, 0px)), 0)
+    transform: translate3d(
+        calc(var(--hero-focus-x) * -1 + var(--hero-px, 0px)),
+        calc(var(--hero-focus-y) * -1 + var(--hero-py, 0px)),
+        0
+      )
       rotateY(var(--hero-ry, 0deg));
-  }
-  .hero-backdrop {
-    filter: blur(34px) saturate(1.12);
-    opacity: 0.7;
   }
   .hero-grass {
     height: 13%;
@@ -4381,7 +4410,9 @@ input[type="range"]::-moz-range-thumb {
     position: absolute;
     left: 12px;
     top: calc(12px + env(safe-area-inset-top, 0px));
-    width: min(214px, calc(100vw - 24px));
+    /* Full-bleed means the tower sits at about 60% of the width on a portrait
+       phone: keep the lockup clear of it. */
+    width: min(196px, calc(52vw));
     padding: 10px 12px 11px;
     box-shadow: 3px 3px 0 var(--ink);
     transform: none;

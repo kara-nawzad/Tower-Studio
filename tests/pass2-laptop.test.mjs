@@ -469,3 +469,47 @@ test("L10: every laptop window in the brief is measured, not assumed", () => {
   }
   assert.equal(rows.length, widths.length * heights.length);
 });
+
+test("the laptop hero is full-bleed too, and keeps all four hotspots in frame", () => {
+  const pins = { tower: 0.628, shelter: 0.495, generator: 0.702, truck: 0.255 };
+  for (const { width, height } of [
+    ...LAPTOPS,
+    { width: 1280, height: 720 },
+    { width: 2560, height: 1080 },
+  ]) {
+    const { studio, dom } = createHeadlessStudio({ width, height });
+    const layout = studio.heroLayout(width, height);
+    assert.equal(layout.covers, true, `${width}x${height}: the artwork covers the stage`);
+    assert.ok(
+      Math.abs(layout.boxWidth / layout.boxHeight - studio.HERO_ASPECT) < 0.001,
+      `${width}x${height}: the artwork keeps its aspect ratio`
+    );
+    // A wide window crops a few per cent; a 4:3 window crops the sides to fill
+    // the height. Either way it is one picture filling the frame, not a
+    // letterboxed stamp with blue bands above and below it.
+    assert.ok(
+      layout.visible.x1 - layout.visible.x0 > 0.6,
+      `${width}x${height}: still most of the picture`
+    );
+    for (const [name, x] of Object.entries(pins)) {
+      assert.ok(
+        layout.visible.x0 <= x && x <= layout.visible.x1,
+        `${width}x${height}: the ${name} hotspot (${x}) is in frame`
+      );
+    }
+    // The parallax can never outrun the bleed margin.
+    assert.ok(layout.slackX >= 34, `${width}x${height}: room for the pointer shift`);
+    dom.window.close();
+  }
+
+  // A landscape window keeps the picture centred; only portraits slide it.
+  const { studio, dom } = createHeadlessStudio({ width: 1366, height: 768 });
+  const focus = (width, height) => {
+    const { x, y } = studio.heroFocus(width, height);
+    return [Number(x.toFixed(2)), Number(y.toFixed(2))];
+  };
+  assert.deepEqual(focus(1366, 768), [0.5, 0.5], "a landscape window centres the picture");
+  assert.deepEqual(focus(800, 1024), [0.58, 0.5], "a portrait tablet slides it right");
+  assert.deepEqual(focus(390, 844), [0.6, 0.5], "a portrait phone slides it furthest");
+  dom.window.close();
+});

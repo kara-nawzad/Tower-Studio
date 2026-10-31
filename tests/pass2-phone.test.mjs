@@ -379,3 +379,83 @@ test("C1: a Guided step opens with ten controls or fewer", () => {
   }
   dom.window.close();
 });
+
+test("the hero is full-bleed on a phone: no letterbox, and the site stays in frame", () => {
+  // The picture must cover the stage on both axes at every phone shape. A
+  // contain-fit left a flat blue band above and below the artwork, which is
+  // exactly what the hero used to look like.
+  const SIZES = [
+    [360, 800],
+    [390, 844],
+    [430, 932],
+    [490, 875],
+    [768, 1024],
+    [844, 390],
+  ];
+  for (const [width, height] of SIZES) {
+    const { studio, dom } = createHeadlessStudio({ width, height });
+    const layout = studio.heroLayout(width, height);
+    assert.equal(layout.covers, true, `${width}x${height}: the artwork covers the stage`);
+    assert.ok(layout.boxWidth >= width, `${width}x${height}: no horizontal letterbox`);
+    assert.ok(layout.boxHeight >= height, `${width}x${height}: no vertical letterbox`);
+    // The box keeps the picture's own aspect ratio, so nothing is distorted.
+    assert.ok(
+      Math.abs(layout.boxWidth / layout.boxHeight - studio.HERO_ASPECT) < 0.001,
+      `${width}x${height}: the artwork keeps its aspect ratio`
+    );
+    // The pins are positioned as fractions of the picture; the tower must stay
+    // inside the visible slice on every phone.
+    const window = layout.visible;
+    assert.ok(
+      window.x0 > 0 && window.x1 < 1.0001,
+      `${width}x${height}: the crop is the width, not the whole picture`
+    );
+    assert.ok(
+      window.x0 <= 0.628 && 0.628 <= window.x1,
+      `${width}x${height}: the tower (62.8%) is in frame`
+    );
+    assert.ok(
+      window.x0 <= 0.495 && 0.495 <= window.x1,
+      `${width}x${height}: the shelter (49.5%) is in frame`
+    );
+    dom.window.close();
+  }
+
+  // Portrait focus and the bleed are written down in both places.
+  assert.match(CSS, /--hero-aspect:\s*1\.791045/);
+  assert.match(
+    CSS,
+    /@media \(max-width: 767px\) and \(orientation: portrait\) \{\s*\.hero-artwork \{\s*--hero-focus-x: 60%/s
+  );
+  assert.match(
+    CSS,
+    /@media \(orientation: portrait\) \{\s*\.hero-artwork \{\s*--hero-focus-x: 58%/s
+  );
+  assert.match(CSS, /--hero-bleed:\s*1\.08/);
+  assert.match(CSS, /\.hero-artwork\s*\{[^}]*width:\s*max\(/s);
+
+  // Nothing letterboxes the picture any more, and the letterbox filler is gone.
+  assert.doesNotMatch(HTML, /hero-backdrop/);
+  assert.doesNotMatch(CSS, /\.hero-backdrop/);
+
+  // A pin the crop carries off-screen is hidden rather than half-clipped.
+  assert.match(CSS, /\.hero-hotspot\.is-offstage\s*\{[^}]*visibility:\s*hidden/s);
+  {
+    // …and because jsdom cannot lay the picture out, that rule is also checked
+    // as arithmetic: 62.8% and 49.5% are the two pins a portrait crop keeps.
+    const { studio, dom } = createHeadlessStudio({ width: 390, height: 844 });
+    const { visible } = studio.heroLayout(390, 844);
+    const kept = [0.495, 0.628].filter((x) => visible.x0 <= x && x <= visible.x1);
+    const lost = [0.255, 0.702].filter((x) => visible.x0 <= x && x <= visible.x1);
+    assert.equal(kept.length, 2, "the tower and the shelter stay clickable on a phone");
+    assert.equal(lost.length, 0, "the truck and generator pins would sit past the crop");
+    dom.window.close();
+  }
+
+  // The lockup card is narrower on a phone so it clears the tower.
+  const phone = createHeadlessStudio({ width: 390, height: 844 });
+  const card = phone.document.querySelector("#hero-brand-card");
+  assert.ok(card, "the lockup card is still there");
+  assert.equal(phone.document.querySelectorAll(".hero-hotspot").length, 4);
+  phone.dom.window.close();
+});

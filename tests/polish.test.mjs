@@ -237,9 +237,12 @@ test("the ambient layer moves with the wind and stops for reduced motion", () =>
   still.dom.window.close();
 });
 
-test("every asset the stylesheet points at exists when the browser resolves it", () => {
+test("every asset the page or the stylesheet points at exists", () => {
+  // The hero is full-bleed, so it is no longer drawn from a CSS background: the
+  // <picture> element is the only place the artwork is referenced. Check both
+  // surfaces — any url() the stylesheet still uses, and every source the
+  // markup asks the browser to fetch.
   const urls = [...CSS.matchAll(/url\("([^"]+)"\)/g)].map((match) => match[1]);
-  assert.ok(urls.length > 0, "the hero backdrop is drawn from a file");
   urls.forEach((url) => {
     assert.ok(!url.startsWith("data:"), `${url} should be a file`);
     // The browser resolves a relative url against the stylesheet's own
@@ -247,4 +250,24 @@ test("every asset the stylesheet points at exists when the browser resolves it",
     const resolved = path.join(ROOT_DIR, "src/styles", url);
     assert.ok(fs.existsSync(resolved), `${url} resolves to ${resolved}, which is missing`);
   });
+
+  const heroSources = [
+    ...[...HTML.matchAll(/srcset="([^"]+)"/g)].flatMap((match) =>
+      match[1]
+        .split(",")
+        .map((entry) => entry.trim().split(/\s+/)[0])
+        .filter(Boolean)
+    ),
+    ...[...HTML.matchAll(/src="([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((src) => !src.startsWith("http") && !src.startsWith("data:")),
+    ...[...HTML.matchAll(/<link[^>]+href="([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((href) => !href.startsWith("http")),
+  ];
+  assert.ok(heroSources.includes("./herotower.PNG"), "the hero PNG fallback is in the markup");
+  for (const source of heroSources) {
+    const resolved = path.join(ROOT_DIR, source.replace(/^\.\//, ""));
+    assert.ok(fs.existsSync(resolved), `${source} resolves to ${resolved}, which is missing`);
+  }
 });

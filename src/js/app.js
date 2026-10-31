@@ -10847,6 +10847,56 @@ function updatePowerSimulation(now, dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Hero artwork geometry
+// ---------------------------------------------------------------------------
+// The hero picture is full-bleed: its box keeps the artwork's own aspect ratio
+// and is sized to cover the stage, so there is never a letterbox. These are the
+// same numbers the stylesheet uses (--hero-aspect / --hero-bleed /
+// --hero-focus-x), written down once so the layout can be tested without a
+// browser.
+const HERO_ASPECT = 1.791045; // herotower-*.webp is 1200 x 670
+const HERO_BLEED = 1.08; // headroom for the pointer parallax and the tilt
+
+function heroFocus(width = window.innerWidth, height = window.innerHeight) {
+  // A landscape window crops only a few per cent, so the picture stays centred.
+  // A portrait window keeps a narrow slice of the width, so the focus slides
+  // right to keep the tower, shelter and generator in frame instead of the
+  // empty valley on the left of the picture.
+  if (height < width) return { x: 0.5, y: 0.5 };
+  return { x: width <= 767 ? 0.6 : 0.58, y: 0.5 };
+}
+
+// Where the artwork box sits, and which part of the picture survives the crop,
+// in picture fractions (0-1) for one viewport.
+function heroLayout(width = window.innerWidth, height = window.innerHeight) {
+  const focus = heroFocus(width, height);
+  const boxWidth = Math.max(width * HERO_BLEED, height * HERO_ASPECT * HERO_BLEED);
+  const boxHeight = Math.max(height * HERO_BLEED, (width / HERO_ASPECT) * HERO_BLEED);
+  const left = focus.x * width - focus.x * boxWidth;
+  const top = focus.y * height - focus.y * boxHeight;
+  return {
+    width,
+    height,
+    focus,
+    boxWidth,
+    boxHeight,
+    left,
+    top,
+    // The visible slice of the picture, as fractions of the picture.
+    visible: {
+      x0: (0 - left) / boxWidth,
+      x1: (width - left) / boxWidth,
+      y0: (0 - top) / boxHeight,
+      y1: (height - top) / boxHeight,
+    },
+    // How far the picture may slide before an edge would show.
+    slackX: (boxWidth - width) / 2,
+    slackY: (boxHeight - height) / 2,
+    covers: boxWidth >= width - 0.5 && boxHeight >= height - 0.5,
+  };
+}
+
 const heroMotion = {
   targetX: 0,
   targetY: 0,
@@ -10893,8 +10943,13 @@ function updateHeroPointer(clientX, clientY, immediate = false) {
   const nx = clamp((clientX / w - 0.5) * 2, -1, 1);
   const ny = clamp((clientY / h - 0.5) * 2, -1, 1);
   const mobile = w <= 760;
-  const shiftX = mobile ? 26 : heroMotion.maxShiftX;
-  const shiftY = mobile ? 0 : heroMotion.maxShiftY;
+  // The picture has --hero-bleed of slack; the shift is clamped to a third of
+  // it so the edge of the photograph can never slide into view.
+  const layout = heroLayout(w, h);
+  const limitX = Math.min(heroMotion.maxShiftX, layout.slackX);
+  const limitY = Math.min(heroMotion.maxShiftY, layout.slackY);
+  const shiftX = mobile ? Math.min(26, limitX) : limitX;
+  const shiftY = mobile ? 0 : limitY;
   // Inverse 3D motion: mouse right -> image moves left; mouse up -> image moves down.
   heroMotion.targetX = -nx * shiftX;
   heroMotion.targetY = -ny * shiftY;
@@ -11056,12 +11111,11 @@ function initHeroTab() {
   let touchStartX = 0;
   let touchBaseX = 0;
 
+  // The picture already covers the stage, so the touch pan only gets the bleed
+  // margin to move in — drag it further and a bare edge would appear.
   const mobilePanBounds = () => {
-    const artW = 0.82 * Math.max(1, window.innerHeight) * 1.790822;
-    const halfView = Math.max(1, window.innerWidth) / 2;
-    const minX = -Math.max(0, 0.435 * artW - halfView);
-    const maxX = Math.max(0, 0.565 * artW - halfView);
-    return [minX, maxX];
+    const slack = heroLayout().slackX;
+    return [-slack, slack];
   };
 
   hero.addEventListener("pointerdown", (event) => {
@@ -11097,10 +11151,46 @@ function initHeroTab() {
     resetHeroPointer(false);
   });
 
+  // A pin close to an edge (which a portrait phone crop produces) would push
+  // its callout off-screen. Measure the open callout once and shift it back.
+  const nudgeHeroNote = (spot) => {
+    const note = spot.querySelector(".hero-note");
+    if (!note) return;
+    note.style.setProperty("--note-nudge", "0px");
+    const rect = note.getBoundingClientRect();
+    if (!rect.width) return;
+    const pad = 8;
+    let dx = 0;
+    if (rect.left < pad) dx = pad - rect.left;
+    else if (rect.right > window.innerWidth - pad) dx = window.innerWidth - pad - rect.right;
+    if (dx) note.style.setProperty("--note-nudge", `${Math.round(dx)}px`);
+  };
+
+  // A hotspot whose component the crop has carried off-screen is hidden rather
+  // than left half-clipped at the edge of the picture.
+  const syncHeroHotspots = () => {
+    const art = $("#hero-artwork");
+    if (!art) return;
+    const box = art.getBoundingClientRect();
+    if (!box.width) return; // No layout engine (tests): nothing to measure.
+    hero.querySelectorAll(".hero-hotspot").forEach((spot) => {
+      const pin = spot.querySelector(".hero-pin");
+      if (!pin) return;
+      const rect = pin.getBoundingClientRect();
+      const centre = rect.left + rect.width / 2;
+      const pad = rect.width / 2 + 4;
+      const visible = centre >= pad && centre <= window.innerWidth - pad;
+      spot.classList.toggle("is-offstage", !visible);
+    });
+  };
+  syncHeroHotspots();
+  window.addEventListener("resize", syncHeroHotspots);
+
   hero.querySelectorAll(".hero-hotspot").forEach((spot) => {
     const key = spot.dataset.hotspot || null;
     spot.addEventListener("pointerenter", () => {
       heroMotion.activeHotspot = key;
+      nudgeHeroNote(spot);
     });
     spot.addEventListener("pointerleave", () => {
       if (heroMotion.activeHotspot === key && !spot.classList.contains("is-open")) {
@@ -11109,6 +11199,7 @@ function initHeroTab() {
     });
     spot.addEventListener("focus", () => {
       heroMotion.activeHotspot = key;
+      nudgeHeroNote(spot);
     });
     spot.addEventListener("blur", () => {
       if (heroMotion.activeHotspot === key) heroMotion.activeHotspot = null;
@@ -11121,6 +11212,7 @@ function initHeroTab() {
         .forEach((other) => other.classList.remove("is-open"));
       spot.classList.toggle("is-open", willOpen);
       heroMotion.activeHotspot = willOpen ? key : null;
+      if (willOpen) nudgeHeroNote(spot);
     });
   });
 
@@ -12552,6 +12644,10 @@ window.TowerStudio.measureChrome = measureChrome;
 window.TowerStudio.chromeMetrics = chromeMetrics;
 // The chrome arithmetic the pass-2 layout tests measure against.
 window.TowerStudio.chromeLayout = chromeLayout;
+window.TowerStudio.heroLayout = heroLayout;
+window.TowerStudio.heroFocus = heroFocus;
+window.TowerStudio.HERO_ASPECT = HERO_ASPECT;
+window.TowerStudio.HERO_BLEED = HERO_BLEED;
 window.TowerStudio.chromeTokensFor = chromeTokensFor;
 window.TowerStudio.CHROME_TOKENS = CHROME_TOKENS;
 window.TowerStudio.CHROME = { overlaps, unionArea, rect, textWidth };

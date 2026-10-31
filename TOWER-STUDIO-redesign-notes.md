@@ -501,7 +501,61 @@ Share of the window **not covered by any chrome**, and intersecting box pairs:
   wrapping. The arithmetic and the stylesheet agree on the tokens; a human should
   still look at a real phone.
 
-## 15. What was not verified (pass 2)
+## 15. The hero: full-bleed, not letterboxed
+
+Pass 1 sized the hero artwork to _fit_ inside the stage
+(`width: min(94vw, 94vh × aspect)`, `object-fit: contain`) and filled the rest
+with a blurred copy of the same picture. On a laptop that left a wide flat-blue
+band above and below the illustration, and on a phone a second band below it:
+the hero read as a stamp of a photograph floating on a blue field, with four
+pins stranded in the middle of it.
+
+The artwork now **covers** the stage at every window shape:
+
+- the box keeps the picture's own ratio (`--hero-aspect: 1.791045`, i.e. the
+  1200 × 670 master) so nothing is ever distorted, and is sized with
+  `width: max(100vw, 100dvh × aspect) × 1.08` / `height: max(100dvh, 100vw /
+aspect) × 1.08` — one picture, edge to edge, cropped by `.hero-stage`;
+- the extra 8% is headroom (`--hero-bleed`) for the pointer parallax and the
+  tilt, so the edge of the photograph can never slide into view. `app.js` clamps
+  the shift to `min(maxShift, slack)` instead of assuming it fits;
+- `--hero-focus-x` decides which slice survives the crop. Landscape keeps it
+  centred (a 16:9 window loses ~4% off each side); a portrait window keeps a
+  narrow strip of the width, so the focus slides to 58–60% and the tower stays
+  in frame instead of the empty valley on the left of the picture;
+- the blurred `.hero-backdrop` layer is gone — there is no letterbox left to
+  fill;
+- touch panning on a phone used to drag the picture by up to ±43% of its width
+  (the "recentre" gesture from when it was fitted); it now only moves inside the
+  bleed margin;
+- a pin the crop carries off-screen is hidden (`is-offstage`, measured from the
+  visible box, not from the percentages) instead of sitting half-clipped at the
+  edge, and a tapped callout whose box would overflow the viewport is nudged
+  back in (`--note-nudge`);
+- the phone lockup card is narrower (`min(196px, 52vw)`), so it clears the tower
+  that the full-bleed crop now puts at 60% of the width.
+
+Measured with `window.TowerStudio.heroLayout(width, height)`:
+
+| Window    | focus | visible slice of the picture (x) | pins in frame             |
+| --------- | ----- | -------------------------------- | ------------------------- |
+| 390×844   | 60%   | 45.7% – 69.6%                    | tower, shelter            |
+| 430×932   | 60%   | 45.7% – 69.5%                    | tower, shelter            |
+| 768×1024  | 58%   | 35.5% – 74.3%                    | tower, shelter, generator |
+| 844×390   | 50%   | 3.7% – 96.3%                     | all four                  |
+| 1024×768  | 50%   | 15.5% – 84.5%                    | all four                  |
+| 1366×768  | 50%   | 4.0% – 96.0%                     | all four                  |
+| 1920×1080 | 50%   | 4.0% – 96.0%                     | all four                  |
+| 2560×1080 | 50%   | 3.7% – 96.3%                     | all four                  |
+
+`covers` is true on all of them: the box is at least as wide as the window and
+at least as tall as the window, so there is no band anywhere to see flat blue in.
+The two phone assertions live in `tests/pass2-phone.test.mjs`, the laptop ones in
+`tests/pass2-laptop.test.mjs`.
+
+---
+
+## 16. What was not verified (pass 2)
 
 1. **No screenshots.** No browser binary is available in this environment, so
    `screenshots/` was not regenerated and nobody — human or model — looked at a
@@ -518,7 +572,7 @@ Share of the window **not covered by any chrome**, and intersecting box pairs:
    re-measured with `getBoundingClientRect`, which jsdom cannot answer, so the
    `--sheet-h` value in a headless run is 0.
 
-## 16. Decisions taken without asking (pass 2)
+## 17. Decisions taken without asking (pass 2)
 
 - **Gate strip = six labelled dots**, the first of the two options in A6. It
   keeps the six gates permanently visible, keeps the pass/fail vocabulary
