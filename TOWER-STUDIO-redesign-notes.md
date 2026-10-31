@@ -673,7 +673,7 @@ Two changes make that impossible to repeat:
 
 - the dev server now sends `Cache-Control: no-store, no-cache, must-revalidate,
 max-age=0` with `Pragma: no-cache` and `Expires: 0` on every response;
-- `index.html` asks for `main.css?v=20261031d` and `app.js?v=20261031d`, so even
+- `index.html` asks for `main.css?v=20261031e` and `app.js?v=20261031e`, so even
   a proxy that ignores cache headers is looking at a URL it has never seen.
   `scripts/build.mjs` and `tests/polish.test.mjs` strip the query before
   resolving a path, and `tests/app.test.mjs` now requires the version to be
@@ -685,7 +685,76 @@ browser picked the nearest heavier face for all of them.
 
 ---
 
-## 17. What was not verified (pass 2)
+## 17. Sound: what the site sounds like
+
+The studio had no audio at all after pass 1 (a test even enforced the silence).
+It now has a small synthesised kit: **no audio files, no dependencies, no
+assets** — every effect is built from oscillators and one shared noise buffer at
+the moment it is needed, so the page still ships one HTML file, one stylesheet
+and one script.
+
+### 17.1 The palette
+
+Sixteen cues, grouped by the thing each one stands for. Peaks are deliberately
+low (the master gain is 0.42) and every effect is shorter than a second, so the
+room never fills with noise.
+
+| Cue       | Where it is heard                                         | How it is made                              |
+| --------- | --------------------------------------------------------- | ------------------------------------------- |
+| `tick`    | card folds, tabs, chrome buttons                          | 28 ms band-passed noise + a 1.2 kHz blip    |
+| `select`  | picking an option, a vendor, a band                       | 620→780 Hz triangle, 70 ms                  |
+| `step`    | entering a master step                                    | 392 → 587 Hz, two notes                     |
+| `confirm` | applying recommended settings, copying                    | C-E-G arpeggio                              |
+| `blocked` | a locked step, a failed launch                            | 150→110 Hz square through a 700 Hz low-pass |
+| `toggle`  | a checkbox, a cabinet door                                | switch click + 180 Hz thump                 |
+| `relay`   | breakers: battery preset, grid source, blackout, failover | 92→48 Hz thump + contactor click            |
+| `ratchet` | dragging any slider                                       | 8 ms detent click, throttled to 55 ms       |
+| `key`     | the CLI console                                           | 8 ms key click, throttled to 30 ms          |
+| `weld`    | assembly, AI build                                        | noise sizzle + three ringing partials       |
+| `servo`   | camera fits and presets                                   | 190→300 Hz saw through a 1.2 kHz low-pass   |
+| `whoosh`  | hero opening, terminal/sheet opening                      | noise swept 380→2600 Hz                     |
+| `sweep`   | a sector sweep starting                                   | 320→1500 Hz out, 1500→320 Hz back           |
+| `alarm`   | alarm and failover tests                                  | three 760/940 Hz square pulses              |
+| `onair`   | the site passes acceptance                                | C-E-G-C rise over a 110 Hz hum              |
+| `toast`   | (available for notifications)                             | two ticks, a fifth apart                    |
+
+A drawer action names its own cue (`ACTION_SOUNDS`), so a card fold is a click
+while a breaker is a contactor. Sounds whose result is decided further down the
+call chain — a sweep starting, a launch passing acceptance, a step opening —
+play where that result is known, not where the button is.
+
+### 17.2 Behaviour you can rely on
+
+- **Nothing before a gesture.** No `AudioContext` exists until the page has been
+  touched, and the first pointerdown or key press wakes the kit; that same
+  gesture is the first thing you hear. A context that starts suspended (some
+  browsers) is resumed and the sound that would have been late is dropped rather
+  than queued.
+- **One context, no timers.** A single `AudioContext` and a single 1-second noise
+  buffer are reused; every node is scheduled and stopped, nothing loops, nothing
+  drones, and no `setInterval` exists anywhere in the app.
+- **Throttled by name**, so a drag ratchets instead of buzzing and a rebuild
+  cannot machine-gun.
+- **Opt-out and remembered**: menu · _Sound effects_ (a switch, so the menu stays
+  open to show its new state) or the **M** key. The choice is stored in
+  `tower-studio.sound.v1`.
+- **Silent where Web Audio does not exist** — jsdom, very old browsers: `play()`
+  returns `false`, nothing throws, and no test needs an audio device.
+- **The top bar is untouched**: the row lives in the menu, so the one-row bar
+  keeps its five buttons on every laptop. The M key is documented in Shortcuts
+  & help.
+
+`window.TowerStudio.sound` is additive: `play(name)`, `setEnabled(on)`,
+`toggle()`, `enabled()`, `available()`, `names()`, `volume`. `tests/sound.test.mjs`
+drives the whole palette through a fake-audio device, and checks the two ways a
+synthesiser fails silently: a scheduled time that is not finite, and an
+exponential ramp to zero. It caught a real one — the throttle compared against a
+"never played" sentinel of 0, which swallowed the first long effect of every
+session because the page clock itself starts at zero.
+
+---
+
+## 18. What was not verified (pass 2)
 
 1. **No screenshots.** No browser binary is available in this environment, so
    `screenshots/` was not regenerated and nobody — human or model — looked at a
@@ -702,7 +771,7 @@ browser picked the nearest heavier face for all of them.
    re-measured with `getBoundingClientRect`, which jsdom cannot answer, so the
    `--sheet-h` value in a headless run is 0.
 
-## 18. Decisions taken without asking (pass 2)
+## 19. Decisions taken without asking (pass 2)
 
 - **Gate strip = six labelled dots**, the first of the two options in A6. It
   keeps the six gates permanently visible, keeps the pass/fail vocabulary
@@ -719,6 +788,10 @@ browser picked the nearest heavier face for all of them.
 - **"Nothing is removed" is literal**: a closed card is still in the DOM (hidden),
   every `data-action` still renders, and the Engineer level shows the entire
   control surface in one scroll.
+- **Sound is on by default, but quiet** (master gain 0.42, no effect above 0.16
+  peak), off until the first gesture by browser rule, and switchable from the
+  menu or with M. A silent-by-default studio that nobody switches on is not what
+  "add sound effects" means.
 - **The battery presets only map to option pairs the app already had**
   (1×100, 2×150, 4×200 Ah); the default site still loads the Extended bank, so
   no default number moved.

@@ -57,25 +57,30 @@ test("no colour emoji is left in the markup or the drawer strings", () => {
   }
 });
 
-test("the studio is silent: no Web Audio anywhere in the app", () => {
-  for (const token of [
-    "AudioContext",
-    "createOscillator",
-    "createGain",
-    "playContactor",
-    "playFrequencyLockChime",
-    "updateMicrowaveTone",
-    "stopMicrowaveAudio",
+test("sound is synthesised in the app, not shipped as audio files", () => {
+  // Pass 1 removed the Web Audio drone entirely; the studio now has a small
+  // opt-out kit instead (palette and behaviour in tests/sound.test.mjs). What
+  // must stay true is that it is built from oscillators and one noise buffer:
+  // there are no sound assets to download, and no timer keeps anything playing.
+  const assets = /[\w-]+\.(mp3|wav|ogg|m4a|aac|flac|opus)/i;
+  for (const [name, source] of [
+    ["index.html", HTML],
+    ["src/js/app.js", JS],
+    ["src/styles/main.css", CSS],
   ]) {
-    assert.ok(!JS.includes(token), `${token} should be gone`);
+    assert.equal(assets.test(source), false, `${name} points at an audio file`);
   }
-  // …and it still runs: the power events that used to click and chime are fine.
+  assert.equal((JS.match(/new Ctor\(\)/g) || []).length, 1, "one audio context, created on demand");
+  assert.equal((JS.match(/setInterval\(/g) || []).length, 0, "nothing runs on a timer");
+
+  // …and the rest of the app still runs with the kit in place.
   const { studio } = createHeadlessStudio({ width: 1440, height: 900 });
   studio.state.onboarding.active = false;
   studio.startBlackout();
   assert.equal(studio.powerSimulation.phase, "BATTERY_BRIDGE");
   studio.restoreGrid();
   assert.equal(studio.powerSimulation.phase, "NORMAL");
+  assert.equal(studio.sound.play("tick"), false, "silent where Web Audio is missing");
 });
 
 test("the drawer renders without a missing helper after the audio removal", () => {

@@ -68,6 +68,461 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round = (value, digits = 1) => Number(value.toFixed(digits));
 const V3 = (x, y, z) => new T.Vector3(x, y, z);
 
+// ---------------------------------------------------------------------------
+// Sound: a synthesised engineering kit — no audio files, no dependencies
+// ---------------------------------------------------------------------------
+// Every effect is built from oscillators and one shared noise buffer at the
+// moment it is needed, so the page still ships one HTML file, one stylesheet and
+// one script. The palette follows the thing each sound stands for:
+//
+//   tick · select · step        the interface itself   dry clicks, short blips
+//   toggle · relay              switches and breakers  mechanism + contactor
+//   weld · servo · whoosh       the build              metal, motors, air
+//   sweep · alarm · onair       the radio              chirps, klaxon, lock
+//
+// Sounds are opt-out (menu · Sound effects, or the M key), remembered in
+// localStorage, and silent where Web Audio does not exist (jsdom, old browsers):
+// playSound() returns false there instead of throwing.
+const SOUND_STORAGE_KEY = "tower-studio.sound.v1";
+
+const SOUND_STATE = {
+  enabled: true,
+  volume: 0.42,
+  ctx: null,
+  master: null,
+  noise: null,
+  last: Object.create(null),
+  // A browser will not start audio until the page has been touched, so neither
+  // will the studio: the first pointerdown or key press wakes the kit, and the
+  // sounds that belong to that same gesture are the first ones heard.
+  awake: false,
+};
+
+// Minimum gap between two plays of the same effect, in ms: a drag fires `input`
+// dozens of times a second and a machine-gun ratchet is not a ratchet.
+const SOUND_GAPS = {
+  ratchet: 55,
+  tick: 35,
+  key: 30,
+  select: 45,
+  toggle: 60,
+  relay: 140,
+  servo: 450,
+  weld: 280,
+  sweep: 900,
+  alarm: 700,
+  whoosh: 280,
+  confirm: 200,
+  step: 200,
+  onair: 1200,
+  blocked: 200,
+  toast: 400,
+};
+
+// ---------------------------------------------------------------- building blocks
+function soundNoiseBuffer(ctx) {
+  if (SOUND_STATE.noise && SOUND_STATE.noise.sampleRate === ctx.sampleRate)
+    return SOUND_STATE.noise;
+  const rate = ctx.sampleRate || 44100;
+  const buffer = ctx.createBuffer(1, Math.floor(rate), rate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+  SOUND_STATE.noise = buffer;
+  return buffer;
+}
+
+// An attack/decay envelope, in the exponential domain Web Audio prefers. It
+// never reaches zero (that is a logarithmic ramp to -infinity) but 0.0001 is
+// quieter than anything a laptop speaker can reproduce.
+function soundEnvelope(ctx, gain, at, peak, attack, duration) {
+  const level = Math.max(0.0002, peak);
+  const hold = Math.max(0.002, attack);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(level, at + hold);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + Math.max(duration, hold + 0.02));
+}
+
+function soundTone(ctx, out, options) {
+  const {
+    type = "sine",
+    from = 440,
+    to = from,
+    at = 0,
+    dur = 0.1,
+    peak = 0.07,
+    filter = 0,
+  } = options;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(from, at);
+  if (to !== from) osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), at + dur);
+  soundEnvelope(ctx, gain, at, peak, Math.min(0.012, dur * 0.25), dur);
+  if (filter) {
+    const low = ctx.createBiquadFilter();
+    low.type = "lowpass";
+    low.frequency.setValueAtTime(filter, at);
+    osc.connect(low);
+    low.connect(gain);
+  } else {
+    osc.connect(gain);
+  }
+  gain.connect(out);
+  osc.start(at);
+  osc.stop(at + dur + 0.05);
+}
+
+function soundNoise(ctx, out, options) {
+  const {
+    at = 0,
+    dur = 0.05,
+    peak = 0.1,
+    type = "bandpass",
+    freq = 1800,
+    to = 0,
+    q = 1.2,
+  } = options;
+  const source = ctx.createBufferSource();
+  source.buffer = soundNoiseBuffer(ctx);
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.setValueAtTime(freq, at);
+  if (to) filter.frequency.exponentialRampToValueAtTime(Math.max(40, to), at + dur);
+  filter.Q.setValueAtTime(q, at);
+  const gain = ctx.createGain();
+  soundEnvelope(ctx, gain, at, peak, 0.006, dur);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(out);
+  source.start(at);
+  source.stop(at + dur + 0.05);
+}
+
+// ---------------------------------------------------------------- the kit
+const SOUND_RECIPES = {
+  // A dry click: a hardware button heard through a desk.
+  tick(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.028, peak: 0.14, freq: 2400, q: 9 });
+    soundTone(ctx, out, { at, dur: 0.02, from: 1240, to: 1020, peak: 0.05, type: "triangle" });
+  },
+  // Choosing an option: one short tuned blip.
+  select(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.07, from: 620, to: 780, peak: 0.07, type: "triangle" });
+  },
+  // A step of the master sequence: two rising notes, a relay picking up.
+  step(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.08, from: 392, peak: 0.07, type: "triangle" });
+    soundTone(ctx, out, { at: at + 0.08, dur: 0.12, from: 587, peak: 0.055, type: "triangle" });
+  },
+  // Something finished: a small major arpeggio.
+  confirm(ctx, out, at) {
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      soundTone(ctx, out, {
+        at: at + i * 0.07,
+        dur: 0.16,
+        from: freq,
+        peak: 0.055,
+        type: "triangle",
+      });
+    });
+  },
+  // Refused: a low filtered buzz, not a toy error sound.
+  blocked(ctx, out, at) {
+    soundTone(ctx, out, {
+      at,
+      dur: 0.2,
+      from: 150,
+      to: 110,
+      peak: 0.09,
+      type: "square",
+      filter: 700,
+    });
+    soundNoise(ctx, out, { at, dur: 0.06, peak: 0.08, freq: 260, q: 1.4 });
+  },
+  // A mechanical switch threw.
+  toggle(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.014, peak: 0.12, freq: 3000, q: 6 });
+    soundTone(ctx, out, {
+      at,
+      dur: 0.05,
+      from: 190,
+      to: 150,
+      peak: 0.07,
+      type: "square",
+      filter: 900,
+    });
+  },
+  // The fine ratchet of a slider passing a detent.
+  ratchet(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.012, peak: 0.06, freq: 4200, q: 14 });
+  },
+  // One key on a laptop keyboard, for the CLI.
+  key(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.008, peak: 0.05, freq: 3600, q: 12 });
+  },
+  // A breaker: the contactor closing, with the panel behind it.
+  relay(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.05, peak: 0.1, freq: 900, q: 1.1 });
+    soundTone(ctx, out, { at, dur: 0.16, from: 92, to: 48, peak: 0.16, type: "sine" });
+    soundTone(ctx, out, {
+      at: at + 0.01,
+      dur: 0.05,
+      from: 1800,
+      to: 1200,
+      peak: 0.05,
+      type: "square",
+      filter: 2400,
+    });
+  },
+  // Welding a bracket: a sizzle with a ringing metal tail.
+  weld(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.12, peak: 0.14, freq: 1700, q: 3 });
+    [1180, 1790, 2610].forEach((freq, i) => {
+      soundTone(ctx, out, {
+        at: at + 0.01 * i,
+        dur: 0.26,
+        from: freq,
+        to: freq * 0.97,
+        peak: 0.035,
+      });
+    });
+  },
+  // A camera move: a small servo winding.
+  servo(ctx, out, at) {
+    soundTone(ctx, out, {
+      at,
+      dur: 0.34,
+      from: 190,
+      to: 300,
+      peak: 0.05,
+      type: "sawtooth",
+      filter: 1200,
+    });
+  },
+  // A sheet of air: the hero opening, a panel sliding.
+  whoosh(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.34, peak: 0.09, freq: 380, to: 2600, q: 0.9 });
+  },
+  // A line sweep running: out to the end and back.
+  sweep(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.36, from: 320, to: 1500, peak: 0.07 });
+    soundTone(ctx, out, { at: at + 0.4, dur: 0.32, from: 1500, to: 320, peak: 0.04 });
+  },
+  // A site alarm: the two-tone klaxon, short and quiet.
+  alarm(ctx, out, at) {
+    [0, 0.18, 0.36].forEach((offset, i) => {
+      soundTone(ctx, out, {
+        at: at + offset,
+        dur: 0.13,
+        from: i % 2 ? 940 : 760,
+        peak: 0.05,
+        type: "square",
+        filter: 2000,
+      });
+    });
+  },
+  // Carrier lock: the four-note rise, and the hum left behind it.
+  onair(ctx, out, at) {
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+      soundTone(ctx, out, {
+        at: at + i * 0.09,
+        dur: 0.22,
+        from: freq,
+        peak: 0.055,
+        type: "triangle",
+      });
+    });
+    soundTone(ctx, out, { at: at + 0.05, dur: 0.9, from: 110, peak: 0.035 });
+  },
+  // A toast: two ticks, the second a fifth up.
+  toast(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.05, from: 880, peak: 0.05 });
+    soundTone(ctx, out, { at: at + 0.06, dur: 0.05, from: 1320, peak: 0.035 });
+  },
+};
+
+// Which cue a drawer action deserves. Actions whose result is only known further
+// down the call chain (a sweep starting, a launch passing acceptance) return
+// null and play their own sound where the outcome is decided.
+const ACTION_SOUNDS = {
+  "card-toggle": "tick",
+  "fine-toggle": "tick",
+  tab: "tick",
+  "rack-trace": "tick",
+  "rack-patch": "tick",
+  "clear-selection": "tick",
+  "dismiss-gesture-hint": "tick",
+  "dismiss-locked-notice": "tick",
+  "dismiss-restore-notice": "tick",
+  "close-hud-panel": "tick",
+  "close-shortcuts": "tick",
+  "undo-recommended": "tick",
+  "copy-code": "key",
+  "battery-preset": "relay",
+  "power-source-mode": "relay",
+  "power-blackout": "relay",
+  "restore-grid": "relay",
+  "test-failover": "relay",
+  "cv-restore": "relay",
+  "rack-door-toggle": "toggle",
+  "rack-toggle": "toggle",
+  "custom-gen-toggle": "toggle",
+  "mw-auto-align": "servo",
+  "apply-recommended": "confirm",
+  "profile-confirm-apply": "confirm",
+  "profile-confirm-cancel": "tick",
+  "terminal-open": "whoosh",
+  "terminal-close": "whoosh",
+};
+
+const SILENT_ACTIONS = new Set([
+  "go-on-air",
+  "rf-onair",
+  "rf-run-sweep",
+  "acceptance-refresh",
+  "goto-step",
+  "onboarding-next",
+  "gate-jump",
+  "cli-command",
+  "ai-copilot",
+  "triage-choice",
+]);
+
+function soundForAction(action) {
+  if (!action || SILENT_ACTIONS.has(action)) return null;
+  return ACTION_SOUNDS[action] || "select";
+}
+
+// ---------------------------------------------------------------- playback
+function soundContext() {
+  if (SOUND_STATE.ctx) return SOUND_STATE.ctx;
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (typeof Ctor !== "function") return null;
+  try {
+    const ctx = new Ctor();
+    const master = ctx.createGain();
+    master.gain.value = SOUND_STATE.volume;
+    master.connect(ctx.destination);
+    SOUND_STATE.ctx = ctx;
+    SOUND_STATE.master = master;
+    return ctx;
+  } catch (_) {
+    return null;
+  }
+}
+
+function resumeSoundContext() {
+  const ctx = SOUND_STATE.ctx;
+  if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
+    try {
+      const started = ctx.resume();
+      if (started && typeof started.catch === "function") started.catch(() => {});
+    } catch (_) {
+      /* an audio context that refuses to start is not an error worth reporting */
+    }
+  }
+}
+
+function playSound(name) {
+  if (!SOUND_STATE.enabled || !SOUND_STATE.awake) return false;
+  const recipe = SOUND_RECIPES[name];
+  if (!recipe) return false;
+  const ctx = soundContext();
+  if (!ctx || !SOUND_STATE.master) return false;
+  // A context built outside a gesture starts suspended. Let it wake up, but do
+  // not queue this sound: it would arrive late, on top of the next one.
+  if (ctx.state === "suspended") {
+    resumeSoundContext();
+    return false;
+  }
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const gap = SOUND_GAPS[name] === undefined ? 40 : SOUND_GAPS[name];
+  // `in`, not a falsy check: the page clock starts at zero, so a "never played"
+  // sentinel of 0 would swallow the first long effect for the first second of
+  // the session.
+  if (name in SOUND_STATE.last && now - SOUND_STATE.last[name] < gap) return false;
+  SOUND_STATE.last[name] = now;
+  try {
+    recipe(ctx, SOUND_STATE.master, ctx.currentTime + 0.01);
+  } catch (_) {
+    return false;
+  }
+  return true;
+}
+
+function syncSoundMenu() {
+  const item = $('[data-action="menu-sound"]');
+  if (!item) return;
+  item.setAttribute("aria-checked", String(SOUND_STATE.enabled));
+  const detail = item.querySelector("small");
+  if (detail) detail.textContent = SOUND_STATE.enabled ? "On · M to mute" : "Muted · M to unmute";
+}
+
+function setSoundEnabled(on, options = {}) {
+  SOUND_STATE.enabled = Boolean(on);
+  try {
+    window.localStorage.setItem(SOUND_STORAGE_KEY, SOUND_STATE.enabled ? "on" : "off");
+  } catch (_) {
+    /* private mode: the setting simply does not survive the tab */
+  }
+  syncSoundMenu();
+  if (SOUND_STATE.enabled && options.silent !== true) {
+    resumeSoundContext();
+    playSound("confirm");
+  }
+  return SOUND_STATE.enabled;
+}
+
+function toggleSound() {
+  const on = setSoundEnabled(!SOUND_STATE.enabled);
+  if (typeof toast === "function") toast(on ? "SOUND · ON" : "SOUND · MUTED");
+  return on;
+}
+
+// The chrome around the drawer — the bar, the menu opener, the HUD chip and the
+// sheet handle — gets its clicks from one delegated listener rather than six.
+function bindSoundChrome() {
+  document.addEventListener("click", (event) => {
+    const control = event.target.closest
+      ? event.target.closest(
+          "#topbar button, #panel-tab, #sheet-handle, #hud-more, #hud-chip, #shortcuts-modal button, .modal-close"
+        )
+      : null;
+    if (!control) return;
+    const id = control.id;
+    if (
+      id === "terminal-toggle" ||
+      id === "panel-tab" ||
+      id === "sheet-handle" ||
+      id === "drawer-toggle"
+    ) {
+      playSound("whoosh");
+    } else {
+      playSound("tick");
+    }
+  });
+}
+
+function unlockSound() {
+  SOUND_STATE.awake = true;
+  resumeSoundContext();
+}
+
+function initSound() {
+  try {
+    SOUND_STATE.enabled = window.localStorage.getItem(SOUND_STORAGE_KEY) !== "off";
+  } catch (_) {
+    SOUND_STATE.enabled = true;
+  }
+  syncSoundMenu();
+  // The first gesture anywhere is what lets a browser start audio at all.
+  document.addEventListener("pointerdown", unlockSound, { capture: true, passive: true });
+  window.addEventListener("keydown", unlockSound, { capture: true });
+  bindSoundChrome();
+}
+
+initSound();
+
 const TOWERS = {
   LATTICE_TUBULAR_3LEG: {
     name: "3-leg tubular lattice",
@@ -4951,6 +5406,7 @@ function startSectorSweep() {
   st.cellular.aiDiagnostics[st.cellular.sector] = null;
   renderDrawer();
   toast(`SITE MASTER · SWEEPING SECTOR ${st.cellular.sector + 1}`);
+  playSound("sweep");
   return true;
 }
 
@@ -6901,6 +7357,7 @@ function cliResponse(command) {
 }
 
 function executeCLI(command, render = true) {
+  playSound("key");
   const raw = String(command ?? "").trim();
   if (!raw) return "";
   ensureTerminalWelcome();
@@ -7070,6 +7527,7 @@ function goOnAir(preserveStep = false) {
   if (!audit.pass) {
     const failed = audit.checks.find((check) => !check.pass);
     toast(`LAUNCH INHIBITED · ${failed.title.toUpperCase()}`);
+    playSound("blocked");
     if (st.masterStep === 5) renderDrawer();
     return false;
   }
@@ -7092,6 +7550,7 @@ function goOnAir(preserveStep = false) {
   renderDrawer();
   updateHUD();
   toast("FREQUENCY LOCK · ALL THREE SECTORS ON AIR");
+  playSound("onair");
   return true;
 }
 
@@ -7787,6 +8246,7 @@ function historyLabelText(label) {
 }
 
 function undo() {
+  playSound("tick");
   if (!siteHistory.past.length) {
     toast("NOTHING TO UNDO");
     return false;
@@ -7802,6 +8262,7 @@ function undo() {
 }
 
 function redo() {
+  playSound("tick");
   if (!siteHistory.future.length) {
     toast("NOTHING TO REDO");
     return false;
@@ -8448,6 +8909,7 @@ function parseAIArchitect(prompt) {
 // Pass 2: the architect is a dialog, not a permanent bar. It opens from the
 // menu, closes with Esc or its close button, and never sits on the scene.
 function setAIArchitectOpen(open) {
+  if (st.ai.architectOpen !== !!open) playSound(open ? "whoosh" : "tick");
   st.ai.architectOpen = !!open;
   const dialog = $("#ai-architect");
   if (dialog) dialog.hidden = !st.ai.architectOpen;
@@ -8643,6 +9105,7 @@ function startManualAssembly(label) {
   aiBuild.intents = [];
   setAIBuildStatus(`ASSEMBLING · ${label}`);
   syncAIArchitect();
+  playSound("weld");
   return true;
 }
 
@@ -11057,7 +11520,9 @@ function updateHeroMotion(dt = 0.016) {
 }
 
 function setHeroOpen(open) {
+  const wasOpen = st.heroOpen;
   st.heroOpen = Boolean(open);
+  if (st.heroOpen !== wasOpen) playSound(st.heroOpen ? "whoosh" : "tick");
   applyHeroLayout();
   document.body.classList.toggle("hero-active", st.heroOpen);
   const hero = $("#hero-tab");
@@ -11419,6 +11884,7 @@ function enterMasterStep(step) {
     const content = $("#drawer-content");
     if (content) content.scrollTop = 0;
     toast(gate.reason.toUpperCase());
+    playSound("blocked");
     return false;
   }
   st.lockedNotice = null;
@@ -11466,6 +11932,7 @@ function enterMasterStep(step) {
     fitSite();
   }
   $("#drawer-content").scrollTop = 0;
+  playSound("step");
   return true;
 }
 
@@ -11485,6 +11952,8 @@ $("#drawer").addEventListener("click", (event) => {
   if (!button || button.disabled) return;
   const action = button.dataset.action;
   const value = button.dataset.value;
+  const cue = soundForAction(action);
+  if (cue) playSound(cue);
   // Any real decision inside a card marks that card finished, so Guided level
   // can fold it to a summary line with an Edit action.
   const owningCard = button.closest(".decision-card[data-card]");
@@ -11863,6 +12332,7 @@ $("#drawer").addEventListener("focusin", (event) => {
 });
 
 $("#drawer").addEventListener("input", (event) => {
+  if (event.target.matches && event.target.matches('input[type="range"]')) playSound("ratchet");
   beginHistoryTransaction();
   const rfInput = event.target.dataset.rfInput;
   if (rfInput) {
@@ -12019,6 +12489,13 @@ $("#drawer").addEventListener(
 );
 
 $("#drawer").addEventListener("change", (event) => {
+  const control = event.target;
+  if (control.matches && control.matches("select")) {
+    playSound(control.dataset.selectAction === "power-source-mode" ? "relay" : "select");
+  } else if (control.matches && control.matches('input[type="checkbox"]')) {
+    const powerChange = control.dataset.powerChange;
+    playSound(powerChange === "branch" || powerChange === "auto-rectifiers" ? "relay" : "toggle");
+  }
   const selectAction = event.target.dataset.selectAction;
   if (selectAction) {
     const owningCard = event.target.closest(".decision-card[data-card]");
@@ -12178,7 +12655,25 @@ $("#menu-panel").addEventListener("click", (event) => {
   const item = event.target.closest("[data-action]");
   if (!item) return;
   const action = item.dataset.action;
+  if (action === "menu-sound") {
+    // A switch, not a command: leave the menu open so the row can show its
+    // new state (and so toggling it twice is one gesture, not two).
+    toggleSound();
+    return;
+  }
   setMenuOpen(false);
+  // Items that open a surface get that surface's sound from the function that
+  // opens it; everything else is a menu click.
+  const menuCue = {
+    "menu-hero": null,
+    "menu-ai": null,
+    "menu-fit": null,
+    "menu-undo": null,
+    "menu-redo": null,
+    "menu-shortcuts": "tick",
+  };
+  const cue = action in menuCue ? menuCue[action] : "select";
+  if (cue) playSound(cue);
   if (action === "menu-undo") undo();
   else if (action === "menu-redo") redo();
   else if (action === "menu-hero") setHeroOpen(!st.heroOpen);
@@ -12343,6 +12838,7 @@ function snapCameraToGoal() {
 }
 
 function fitSite(immediate = false) {
+  if (!immediate) playSound("servo");
   const rooftop = st.env === "URBAN_ROOFTOP";
   const guyed = st.tower === "GUYED_MAST";
   const h = st.H;
@@ -12533,6 +13029,17 @@ window.addEventListener("keydown", (event) => {
     (["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) || active.isContentEditable);
   // Escape always dismisses the AI dialog, even while the caret sits in its
   // own input: a dialog that traps the keyboard is a dialog you cannot leave.
+  // M is the sound switch, and it stays out of the way inside a text field.
+  if (
+    !typing &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === "m"
+  ) {
+    toggleSound();
+    return;
+  }
   if (event.key === "Escape" && st.ai.architectOpen) {
     setAIArchitectOpen(false);
     return;
@@ -12718,6 +13225,15 @@ window.TowerStudio = {
   cameraCurrent,
   rebuild: rebuildSite,
   code: codeSnippet,
+  sound: {
+    play: playSound,
+    setEnabled: setSoundEnabled,
+    toggle: toggleSound,
+    enabled: () => SOUND_STATE.enabled,
+    available: () => typeof (window.AudioContext || window.webkitAudioContext) === "function",
+    names: () => Object.keys(SOUND_RECIPES),
+    volume: SOUND_STATE.volume,
+  },
 };
 window.TowerStudio.saveWorkspace = saveWorkspace;
 window.TowerStudio.readWorkspace = readWorkspace;
