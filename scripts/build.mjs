@@ -36,7 +36,8 @@ execFileSync(process.execPath, ["--check", path.join(ROOT_DIR, "src/js/app.js")]
 const indexHtml = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
 const localAssetPattern = /(?:href|src)=["'](\.\/[^"']+)["']/g;
 for (const match of indexHtml.matchAll(localAssetPattern)) {
-  const assetPath = path.resolve(ROOT_DIR, match[1]);
+  // ?v= is a cache-buster, not part of the path.
+  const assetPath = path.resolve(ROOT_DIR, match[1].replace(/[?#].*$/, ""));
   if (!fs.existsSync(assetPath)) {
     throw new Error(`Broken asset reference in index.html: ${match[1]}`);
   }

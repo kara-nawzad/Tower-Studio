@@ -267,7 +267,9 @@ test("every asset the page or the stylesheet points at exists", () => {
   ];
   assert.ok(heroSources.includes("./herotower.PNG"), "the hero PNG fallback is in the markup");
   for (const source of heroSources) {
-    const resolved = path.join(ROOT_DIR, source.replace(/^\.\//, ""));
+    // A cache-busting ?v= is not part of the file name.
+    const clean = source.replace(/[?#].*$/, "");
+    const resolved = path.join(ROOT_DIR, clean.replace(/^\.\//, ""));
     assert.ok(fs.existsSync(resolved), `${source} resolves to ${resolved}, which is missing`);
   }
 });

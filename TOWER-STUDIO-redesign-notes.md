@@ -660,6 +660,29 @@ capture, so the thumb only moved where you clicked. Now:
 `npm test` is 121 pass / 0 fail, `npm run lint` and `node scripts/build.mjs
 --check` are clean with this chapter in the tree.
 
+### 16.4 The reason the fix looked like it had not happened
+
+It had. The preview kept serving the previous build: `scripts/dev-server.mjs`
+answered with `Cache-Control: no-cache` and no validator, which leaves the
+decision to the proxy in front of it, and the proxy kept its copy. The
+screenshot that arrived after 16.1–16.3 showed the pass-1 artwork (`94vw` wide,
+`object-fit: contain`, blue on all four sides) and the Space Mono labels that had
+already been deleted from the tree — a stale document, not a stale commit.
+
+Two changes make that impossible to repeat:
+
+- the dev server now sends `Cache-Control: no-store, no-cache, must-revalidate,
+max-age=0` with `Pragma: no-cache` and `Expires: 0` on every response;
+- `index.html` asks for `main.css?v=20261031d` and `app.js?v=20261031d`, so even
+  a proxy that ignores cache headers is looking at a URL it has never seen.
+  `scripts/build.mjs` and `tests/polish.test.mjs` strip the query before
+  resolving a path, and `tests/app.test.mjs` now requires the version to be
+  there.
+
+The `Barlow Condensed` request also gained weights 400 and 500: `--mono` is used
+at 400 for subtitles and notes, and asking the API for 600–800 only meant the
+browser picked the nearest heavier face for all of them.
+
 ---
 
 ## 17. What was not verified (pass 2)

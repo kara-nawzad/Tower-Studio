@@ -34,8 +34,10 @@ test("header branding displays INTERACTIVE 3D ENGINEERING SUITE without Phase 01
   const html = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
   const previewSvg = fs.readFileSync(path.join(ROOT_DIR, "assets/preview.svg"), "utf8");
 
-  assert.match(html, /<link\s+rel="stylesheet"\s+href="\.\/src\/styles\/main\.css"/);
-  assert.match(html, /<script\s+src="\.\/src\/js\/app\.js"><\/script>/);
+  // Both carry a cache-busting version: the preview iframe holds on to stale
+  // CSS and JS otherwise, which reads as "the fix did nothing".
+  assert.match(html, /<link\s+rel="stylesheet"\s+href="\.\/src\/styles\/main\.css\?v=[\w.]+"/);
+  assert.match(html, /<script\s+src="\.\/src\/js\/app\.js\?v=[\w.]+"><\/script>/);
   assert.doesNotMatch(html, /<style>/);
   assert.match(html, /three\.js\/r128\/three\.min\.js/);
 
