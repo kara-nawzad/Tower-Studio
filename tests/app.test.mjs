@@ -2,56 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { JSDOM } from "jsdom";
 import * as THREE from "three";
 import { createStaticServer } from "../scripts/dev-server.mjs";
-
-const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function createHeadlessStudio({ width = 1440, height = 900 } = {}) {
-  const html = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
-  const appJs = fs.readFileSync(path.join(ROOT_DIR, "src/js/app.js"), "utf8");
-
-  const dom = new JSDOM(html, {
-    url: "http://localhost:3000/",
-    runScripts: "outside-only",
-    pretendToBeVisual: true,
-  });
-
-  const { window } = dom;
-  window.innerWidth = width;
-  window.innerHeight = height;
-  window.matchMedia = () => ({
-    matches: true,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  });
-  window.requestAnimationFrame = () => 1;
-  window.cancelAnimationFrame = () => {};
-  window.HTMLCanvasElement.prototype.getContext = () => null;
-  window.HTMLElement.prototype.scrollBy = function scrollBy(opts) {
-    if (typeof opts === "object" && opts !== null) {
-      this.scrollLeft = (this.scrollLeft || 0) + (opts.left || 0);
-    }
-  };
-
-  class MockWebGLRenderer {
-    constructor() {
-      this.shadowMap = { enabled: false, type: null, autoUpdate: false, needsUpdate: false };
-      this.outputEncoding = null;
-    }
-    setPixelRatio() {}
-    setSize() {}
-    render() {}
-    dispose() {}
-  }
-
-  window.THREE = { ...THREE, WebGLRenderer: MockWebGLRenderer };
-  window.eval(appJs);
-
-  return { dom, window, document: window.document, studio: window.TowerStudio };
-}
+import { ROOT_DIR, createHeadlessStudio } from "./helpers/headless.mjs";
 
 test("project structure contains entry HTML, separated CSS/JS, docs, assets, and scripts", () => {
   const expectedPaths = [
