@@ -345,3 +345,453 @@ gh pr merge <pr-number> --merge      # or --squash / --rebase
 Before merging, the one thing worth doing first is a human look at
 `screenshots/final/` on a real phone and a real laptop, with the network
 available — that is the gap the automated pass cannot close.
+
+---
+
+# PASS 2 — DECLUTTER
+
+Pass 1 (above) made the guided flow truthful and complete. It also made it
+crowded: on a phone the top bar wrapped, the status strip scrolled sideways, the
+step subtitle pushed the first control out of the sheet, the gate strip collapsed
+to a dark sliver, and a step could open on thirty controls nothing had
+prioritised. Pass 2 is about _what the user sees first_, not about what the app
+knows. Nothing was deleted: every control still exists, in the same step, behind
+a card or behind Fine-tune.
+
+## 11. The shape of a step now
+
+A step is a short list of **decisions**. Each one is a card:
+
+| Step | 01 Site               | 02 Cabinet        | 03 Power       | 04A Backhaul     | 04B Sectors     | 05 Go on air      |
+| ---- | --------------------- | ----------------- | -------------- | ---------------- | --------------- | ----------------- |
+| 1    | Environment           | Equipment profile | Power source   | Link type        | Sector          | Gates + go on air |
+| 2    | Tower (+ hidden line) | Cabinet type      | Backup battery | Dish size & band | Aim             | CLI terminal      |
+| 3    | Height                | Check the cabinet | Test it        | Aim              | Check the cable | —                 |
+| 4    | _Fine-tune_           | _Fine-tune_       | _Fine-tune_    | _Fine-tune_      | _Fine-tune_     | _Fine-tune_       |
+
+- **Guided**: exactly one card is open, the first unfinished one, chosen when the
+  step is entered. A card that has been answered folds to one summary line plus
+  an `EDIT` state chip. Closed card bodies stay in the DOM with `hidden`, so
+  nothing is lost and `window.TowerStudio` can still reach every control.
+- **Engineer**: every card and Fine-tune are open in one scroll — the old wall of
+  controls, unchanged, for the people who asked for it.
+- **Continue** at the end of each step is the only navigation inside the sheet.
+- "Use recommended" appears on Step 03 (auto N+1 + the Standard bank) and Step
+  04A (peak the dish), says "Recommended settings applied" and offers `[ UNDO ]`.
+  It is an ordinary history transaction, so `Ctrl/⌘+Z` reverts it too.
+
+The measured effect on how many controls a Guided step opens with (counted as
+buttons, selects, checkboxes and sliders inside the sheet, excluding closed
+cards, closed `<details>` and the inline glossary buttons):
+
+| Step                  | Before | After | Target |
+| --------------------- | -----: | ----: | -----: |
+| 01 Site (first run)   |     12 | **8** |   ≤ 10 |
+| 01 Site (established) |     15 | **9** |   ≤ 10 |
+| 02 Cabinet            |     58 | **7** |   ≤ 10 |
+| 03 Power              |     14 | **8** |   ≤ 10 |
+| 04A Backhaul          |     22 | **9** |   ≤ 10 |
+| 04B Sectors           |     17 | **9** |   ≤ 10 |
+| 05 Go on air          |     19 | **4** |   ≤ 10 |
+
+(`tests/pass2-phone.test.mjs` → "C1"; the "before" column was produced by running
+the same counter against a worktree of `04a9e2d`.)
+
+## 12. Phone (≤ 767 px)
+
+- **One-row top bar**: logo + one-line wordmark + `TERMINAL` + `⋮`. Hero, AI
+  Build, Fit, Detail level, Undo/Redo, Save/Open/Start fresh and Shortcuts all
+  live in the menu.
+- **Status chip**: the strip is one line, `LIVE MODEL · Rural · 4-leg 56 m ·
+6.3 kW` — the first three cells of the same step-aware data. Tapping it opens
+  "All numbers" (24 cells, no horizontal scroll, one column); tapping outside or
+  Escape closes it.
+- **Sheet**: opens at `40dvh` on step entry, so the header and the first decision
+  card are both visible. Snap states are peek (44 px grab bar), half (40dvh) and
+  full (`100dvh` minus chrome). A collapsed sheet keeps its 44 px grab bar.
+- **Header**: step number + title only. The subtitle returns only while a 3D
+  object is being inspected.
+- **Floating stack**: zoom in / zoom out / fit, 44 px, vertical, bottom-right of
+  the 3D area, `--sheet-h` above the sheet at every snap. At full height there is
+  no 3D area left, so the stack stands down instead of floating over the panel.
+- **AI Architect**: menu-only, opened as a dialog over the scene with a scrim,
+  a close button and Escape (Escape works even with the caret in its input).
+- **Decision**: the gate strip is **six labelled dots in one row** (CIVIL · EARTH
+  · POWER · LINK · RF · ALARMS, each with a drawn dot and PASS/OPEN underneath),
+  not the "3/6 ready" chip. It is 44 px tall in the panel header and can never
+  collapse: it is one `repeat(6, minmax(0, 1fr))` grid row with `min-height:
+var(--tap)`. Each gate is a button that jumps to the step that fixes it.
+
+## 13. Laptop (≥ 1024 px) and the addendum
+
+- **One-row top bar**: logo + wordmark + `LIVE MODEL` chip + Undo/Redo +
+  `TERMINAL` + `⋮`. The eyebrow ("INTERACTIVE 3D ENGINEERING SUITE") appears only
+  from 1280 px.
+- **Step-aware strip**: 4–5 cells, no scrollbar and no arrows, plus "All numbers".
+
+  | Step | Cells                                                      |
+  | ---- | ---------------------------------------------------------- |
+  | 01   | Environment · Structure · Civil check · Earth resistance   |
+  | 02   | Cabinet · Cabinet DC load · Backhaul speed · Live services |
+  | 03   | AC source · Total load · Backup hours · Rectifier N+1      |
+  | 04A  | Microwave RSL · Fade margin · Backhaul speed · Link status |
+  | 04B  | Cellular 3G · Sector status · Last sweep VSWR · Throughput |
+  | 05   | Gates passed · Site status · Active alarms                 |
+
+- **Panel**: a full-height left side panel from 1024 px — below the strip, above
+  the step bar, `clamp(420px, 32vw, 500px)` wide, one internal scroll. Header:
+  step number, title, the six-gate strip, collapse button. Collapsed, a 44 px
+  vertical `CONTROLS` tab reopens it. 768–1023 px get the same sheet as a phone,
+  centred and capped at 720 px.
+- **Step bar**: 44–48 px tall (max 52), five equal columns, short labels on
+  phones ("Cabinet", "Aim", "Air") and long labels from 1024 px ("Open cabinet",
+  "Aim & Connect", "Go on air"), each with a drawn done / to-do / locked mark.
+- **Hint**: shown once, dismissible, remembered in
+  `tower-studio.gesture-hint.v1`; afterwards the same sentence is listed in
+  Shortcuts & help.
+- **Camera**: the frustum offsets still come from the measured panel
+  (`chromeMetrics.drawerWidth/drawerHeight/drawerLeft`), re-measured on every
+  resize and on every sheet snap.
+
+## 14. Measured layout
+
+There is **no browser binary in this sandbox** (no Chromium, no Playwright
+browser download available), so the C2 captures and the L10 screenshots could
+not be produced. What is reported instead is the bounding-box arithmetic the
+interface is positioned from: `window.TowerStudio.chromeLayout(width, height)`
+computes every fixed box from the same `--topbar-* / --hud-* / --nav-* /
+--view-* / --panel-* / --sheet-*` tokens the stylesheet uses, and the tests
+assert (a) that the stylesheet tokens and the arithmetic agree number for
+number, (b) that no two boxes intersect, (c) that every box is inside the
+viewport, and (d) the share of the window left to the 3D scene.
+
+Share of the window **not covered by any chrome**, and intersecting box pairs:
+
+| Window    | peek | half | full | side panel |
+| --------- | ---- | ---- | ---- | ---------- |
+| 360×800   | 82 % | 49 % | 14 % | —          |
+| 390×844   | 83 % | 49 % | 13 % | —          |
+| 430×932   | 84 % | 50 % | 12 % | —          |
+| 768×1024  | 83 % | 49 % | 10 % | —          |
+| 1024×768  | —    | —    | —    | 53 %       |
+| 1280×800  | —    | —    | —    | 62 %       |
+| 1366×768  | —    | —    | —    | **62 %**   |
+| 1440×900  | —    | —    | —    | 64 %       |
+| 1920×1080 | —    | —    | —    | 70 %       |
+
+- Every one of those windows reports **0 intersecting pairs** (top bar and its
+  own children excluded, because a chip inside a bar is not an overlap).
+- The phone asks for ≥ 35 % at half and ≥ 70 % at peek: measured 49 % and 82 %.
+- The laptop asks for ≥ 50 % free at 1366×768 Guided: measured 62 %.
+- L10's full matrix — widths 1024/1280/1366/1440/1920 × heights 720/768/900/1080
+  (20 windows), with the panel open and collapsed — is asserted in
+  `tests/pass2-laptop.test.mjs` and reports no overlaps and ≥ 40 % free
+  everywhere.
+- Type: no rule in the stylesheet asks for a font size below **11 px** any more
+  (the file has 907 rules; the pass-1 notes recorded 95 text leaves under 11 px
+  at 390 px). Sentences — `.control-note`, `.card-note`, `.decision-summary`,
+  `.gesture-hint`, `.onboarding-hint`, the drawer subtitle — are 12 px. The
+  decorative allowlist for this rule is **empty**: there is no selector left that
+  needs an exemption, because the drawn marks (gate dot, step-chip status dot,
+  sheet grip) are sized with `width`/`height`, not with type. jsdom does not apply
+  the cascade to `getComputedStyle().fontSize`, so this is a static scan of every
+  rule rather than a computed scan; that is stricter, not weaker.
+- `jsdom has no layout engine`, so the two things it cannot prove are stated
+  rather than implied: the sheet's real pixel height and the browser's own text
+  wrapping. The arithmetic and the stylesheet agree on the tokens; a human should
+  still look at a real phone.
+
+## 15. The hero: full-bleed, not letterboxed
+
+Pass 1 sized the hero artwork to _fit_ inside the stage
+(`width: min(94vw, 94vh × aspect)`, `object-fit: contain`) and filled the rest
+with a blurred copy of the same picture. On a laptop that left a wide flat-blue
+band above and below the illustration, and on a phone a second band below it:
+the hero read as a stamp of a photograph floating on a blue field, with four
+pins stranded in the middle of it.
+
+The artwork now **covers** the stage at every window shape:
+
+- the box keeps the picture's own ratio (`--hero-aspect: 1.791045`, i.e. the
+  1200 × 670 master) so nothing is ever distorted, and is sized with
+  `width: max(100vw, 100dvh × aspect) × 1.08` / `height: max(100dvh, 100vw /
+aspect) × 1.08` — one picture, edge to edge, cropped by `.hero-stage`;
+- the extra 8% is headroom (`--hero-bleed`) for the pointer parallax and the
+  tilt, so the edge of the photograph can never slide into view. `app.js` clamps
+  the shift to `min(maxShift, slack)` instead of assuming it fits;
+- `--hero-focus-x` decides which slice survives the crop. Landscape keeps it
+  centred (a 16:9 window loses ~4% off each side); a portrait window keeps a
+  narrow strip of the width, so the focus slides to 58–60% and the tower stays
+  in frame instead of the empty valley on the left of the picture;
+- the blurred `.hero-backdrop` layer is gone — there is no letterbox left to
+  fill;
+- touch panning on a phone used to drag the picture by up to ±43% of its width
+  (the "recentre" gesture from when it was fitted); it now only moves inside the
+  bleed margin;
+- a pin the crop carries off-screen is hidden (`is-offstage`, measured from the
+  visible box, not from the percentages) instead of sitting half-clipped at the
+  edge, and a tapped callout whose box would overflow the viewport is nudged
+  back in (`--note-nudge`);
+- the phone lockup card is narrower (`min(196px, 52vw)`), so it clears the tower
+  that the full-bleed crop now puts at 60% of the width.
+
+Measured with `window.TowerStudio.heroLayout(width, height)`:
+
+| Window    | focus | visible slice of the picture (x) | pins in frame             |
+| --------- | ----- | -------------------------------- | ------------------------- |
+| 390×844   | 60%   | 45.7% – 69.6%                    | tower, shelter            |
+| 430×932   | 60%   | 45.7% – 69.5%                    | tower, shelter            |
+| 768×1024  | 58%   | 35.5% – 74.3%                    | tower, shelter, generator |
+| 844×390   | 50%   | 3.7% – 96.3%                     | all four                  |
+| 1024×768  | 50%   | 15.5% – 84.5%                    | all four                  |
+| 1366×768  | 50%   | 4.0% – 96.0%                     | all four                  |
+| 1920×1080 | 50%   | 4.0% – 96.0%                     | all four                  |
+| 2560×1080 | 50%   | 3.7% – 96.3%                     | all four                  |
+
+`covers` is true on all of them: the box is at least as wide as the window and
+at least as tall as the window, so there is no band anywhere to see flat blue in.
+The two phone assertions live in `tests/pass2-phone.test.mjs`, the laptop ones in
+`tests/pass2-laptop.test.mjs`.
+
+---
+
+## 16. Second round on the hero, the strip, the type and the sliders
+
+The first full-bleed attempt expressed the cover arithmetic in CSS
+(`width: max(100vw, 100dvh × aspect) × 1.08`). On the user's machine that still
+drew a blue band above _and_ below the picture plus a blue strip down each side:
+a `max()`/`calc()` chain built out of custom properties is exactly the sort of
+thing a browser can reject without saying so, and a rejected size falls back to
+the box's content size. Arguing with the cascade was the wrong move, so the
+arithmetic moved into JavaScript:
+
+- `heroLayout(width, height)` measures the window and returns the cover box;
+  `applyHeroLayout()` writes `--hero-w`, `--hero-h`, `--hero-x`, `--hero-y` as
+  pixels on `#hero-artwork`. It runs on load, on `resize()`, and whenever the
+  hero is opened or closed, and is exported as
+  `window.TowerStudio.applyHeroLayout`.
+- `.hero-artwork` is now a plain `left: 0; top: 0` box with
+  `width: var(--hero-w)` / `height: var(--hero-h)` and
+  `transform: translate3d(var(--hero-x), var(--hero-y), 0)` plus the tilt. The
+  CSS defaults (`100vw` / `100dvh` / `0px`) are only the no-JS fallback, and
+  `.hero-image` uses `object-fit: cover`, so even the first paint before the
+  measurement is edge to edge. No `--hero-focus-x`, no `max()`, no `contain`.
+- `sizes` on the two `<source>`s over-asks (`200vw` on a phone, `108vw` above)
+  because the box is 1.08× the window and a portrait phone only keeps ~24% of a
+  landscape photograph's width: asking for `100vw` selected the 1200 px file and
+  then stretched its 287-pixel-wide slice across a 390-pixel screen.
+- The focus is now 58% on a portrait phone (≤767), 56% on any other portrait
+  window, centred in landscape. 58% keeps the tower (62.8%) and the equipment
+  shelter (49.5%) both inside the crop — the two things the user asked to see —
+  and costs the truck and the generator, which are hidden, not half-clipped.
+
+```
+window                          focus   cover box      picture x       picture y
+360×800   (phone)               58%     1547×864 px    44.5 – 67.8%     3.7 – 96.3%
+390×844   (phone)               58%     1633×912 px    44.1 – 68.0%     3.7 – 96.3%
+430×932   (phone)               58%     1803×1007 px   44.2 – 68.0%     3.7 – 96.3%
+768×1024  (tablet portrait)     56%     1981×1106 px   34.3 – 73.1%     3.7 – 96.3%
+844×390   (phone landscape)     50%      912×509 px     3.7 – 96.3%    11.7 – 88.3%
+1024×768  (small laptop)        50%     1486×829 px    15.5 – 84.5%     3.7 – 96.3%
+1366×640  (short laptop)        50%     1475×824 px     3.7 – 96.3%    11.2 – 88.8%
+1366×768  (laptop)              50%     1486×829 px     4.0 – 96.0%     3.7 – 96.3%
+1920×1080 (desktop)             50%     2089×1166 px    4.0 – 96.0%     3.7 – 96.3%
+2560×1080 (ultrawide)           50%     2765×1544 px    3.7 – 96.3%    15.0 – 85.0%
+```
+
+Every row covers both axes, so there is nothing left for a band to be. The phone
+test asserts the written box (`--hero-w/--hero-h/--hero-x/--hero-y`) covers the
+viewport instead of asserting CSS arithmetic, and both tests now assert
+`object-fit: cover` with no `contain` anywhere.
+
+### 16.1 The strip stops cutting its labels
+
+The slim HUD strip carried the panel's long names (`CELLULAR MIXED`,
+`LAST SWEEP VSWR`), and in a 5-cell row they were rendered as
+`CELLULAR MIXE…`, `LAST SWEEP VS…`. Each catalogue entry now has a `strip:`
+short label used only by the strip, while the "All numbers" panel keeps the long
+one:
+
+| Step | Strip cells                                 |
+| ---- | ------------------------------------------- |
+| 1    | Environment · Structure · Civil · Earth     |
+| 2    | Cabinet · DC load · Backhaul · Services     |
+| 3    | AC source · Load · Backup · N+1             |
+| 4A   | RSL · Fade · Backhaul · Link                |
+| 4B   | Cellular · Sector · Sweep VSWR · Throughput |
+| 5    | Gates · Status · Alarms                     |
+
+Every strip label is ≤ 11 characters (a test enforces it) and the panel still
+renders all 24 long labels, so nothing was lost to make the row fit.
+
+### 16.2 No typewriter face
+
+`Space Mono` is gone from the project — the Google Fonts request, the CSS, the
+canvas rack label and the tests. The label/number face `--mono` is now
+`"Barlow Condensed", "Barlow", sans-serif`, so every `font: … var(--mono)` rule,
+every `--mono` label, the HUD cells, the numeric readouts and the 3D rack text
+take the project's own condensed sans.
+
+The one exception is the step-5 CLI console, which keeps a system monospace
+stack (`--term`) because columns of terminal output have to line up; it is the
+only place the platform monospace appears, and `tests/guards.test.mjs` allows at
+most six uses of it. The guard also fails on any reappearance of `Space Mono`.
+
+### 16.3 Sliders drag
+
+The sliders answered a click but not a drag because the drawer re-rendered on
+every value change: replacing the `<input>` mid-gesture destroys the pointer
+capture, so the thumb only moved where you clicked. Now:
+
+- `beginRangeDrag()` / `endRangeDrag()` bracket the gesture (`pointerdown` on an
+  `input[type="range"]`, `pointerup`/`pointercancel` on the drawer **and** on
+  `window`, so a release outside the panel still ends it);
+- `renderDrawer()` returns early while a thumb is held and remembers that it
+  owes a render, which `endRangeDrag()` flushes. The live readout, the value
+  text and the `--range-progress` fill are still written straight to the DOM on
+  `input`, so the drag is visually continuous, and the 3D scene keeps rebuilding
+  through the existing throttle;
+- the hit area is 34 px tall (thumb 24 px, Firefox 22 px) with
+  `touch-action: pan-y`, so a fat finger grabs the thumb while a vertical swipe
+  still scrolls the panel;
+- a wheel or trackpad gesture over a slider nudges it one step instead of
+  scrolling the panel out from under the pointer.
+
+`npm test` is 121 pass / 0 fail, `npm run lint` and `node scripts/build.mjs
+--check` are clean with this chapter in the tree.
+
+### 16.4 The reason the fix looked like it had not happened
+
+It had. The preview kept serving the previous build: `scripts/dev-server.mjs`
+answered with `Cache-Control: no-cache` and no validator, which leaves the
+decision to the proxy in front of it, and the proxy kept its copy. The
+screenshot that arrived after 16.1–16.3 showed the pass-1 artwork (`94vw` wide,
+`object-fit: contain`, blue on all four sides) and the Space Mono labels that had
+already been deleted from the tree — a stale document, not a stale commit.
+
+Two changes make that impossible to repeat:
+
+- the dev server now sends `Cache-Control: no-store, no-cache, must-revalidate,
+max-age=0` with `Pragma: no-cache` and `Expires: 0` on every response;
+- `index.html` asks for `main.css?v=20261031e` and `app.js?v=20261031e`, so even
+  a proxy that ignores cache headers is looking at a URL it has never seen.
+  `scripts/build.mjs` and `tests/polish.test.mjs` strip the query before
+  resolving a path, and `tests/app.test.mjs` now requires the version to be
+  there.
+
+The `Barlow Condensed` request also gained weights 400 and 500: `--mono` is used
+at 400 for subtitles and notes, and asking the API for 600–800 only meant the
+browser picked the nearest heavier face for all of them.
+
+---
+
+## 17. Sound: what the site sounds like
+
+The studio had no audio at all after pass 1 (a test even enforced the silence).
+It now has a small synthesised kit: **no audio files, no dependencies, no
+assets** — every effect is built from oscillators and one shared noise buffer at
+the moment it is needed, so the page still ships one HTML file, one stylesheet
+and one script.
+
+### 17.1 The palette
+
+Sixteen cues, grouped by the thing each one stands for. Peaks are deliberately
+low (the master gain is 0.42) and every effect is shorter than a second, so the
+room never fills with noise.
+
+| Cue       | Where it is heard                                         | How it is made                              |
+| --------- | --------------------------------------------------------- | ------------------------------------------- |
+| `tick`    | card folds, tabs, chrome buttons                          | 28 ms band-passed noise + a 1.2 kHz blip    |
+| `select`  | picking an option, a vendor, a band                       | 620→780 Hz triangle, 70 ms                  |
+| `step`    | entering a master step                                    | 392 → 587 Hz, two notes                     |
+| `confirm` | applying recommended settings, copying                    | C-E-G arpeggio                              |
+| `blocked` | a locked step, a failed launch                            | 150→110 Hz square through a 700 Hz low-pass |
+| `toggle`  | a checkbox, a cabinet door                                | switch click + 180 Hz thump                 |
+| `relay`   | breakers: battery preset, grid source, blackout, failover | 92→48 Hz thump + contactor click            |
+| `ratchet` | dragging any slider                                       | 8 ms detent click, throttled to 55 ms       |
+| `key`     | the CLI console                                           | 8 ms key click, throttled to 30 ms          |
+| `weld`    | assembly, AI build                                        | noise sizzle + three ringing partials       |
+| `servo`   | camera fits and presets                                   | 190→300 Hz saw through a 1.2 kHz low-pass   |
+| `whoosh`  | hero opening, terminal/sheet opening                      | noise swept 380→2600 Hz                     |
+| `sweep`   | a sector sweep starting                                   | 320→1500 Hz out, 1500→320 Hz back           |
+| `alarm`   | alarm and failover tests                                  | three 760/940 Hz square pulses              |
+| `onair`   | the site passes acceptance                                | C-E-G-C rise over a 110 Hz hum              |
+| `toast`   | (available for notifications)                             | two ticks, a fifth apart                    |
+
+A drawer action names its own cue (`ACTION_SOUNDS`), so a card fold is a click
+while a breaker is a contactor. Sounds whose result is decided further down the
+call chain — a sweep starting, a launch passing acceptance, a step opening —
+play where that result is known, not where the button is.
+
+### 17.2 Behaviour you can rely on
+
+- **Nothing before a gesture.** No `AudioContext` exists until the page has been
+  touched, and the first pointerdown or key press wakes the kit; that same
+  gesture is the first thing you hear. A context that starts suspended (some
+  browsers) is resumed and the sound that would have been late is dropped rather
+  than queued.
+- **One context, no timers.** A single `AudioContext` and a single 1-second noise
+  buffer are reused; every node is scheduled and stopped, nothing loops, nothing
+  drones, and no `setInterval` exists anywhere in the app.
+- **Throttled by name**, so a drag ratchets instead of buzzing and a rebuild
+  cannot machine-gun.
+- **Opt-out and remembered**: menu · _Sound effects_ (a switch, so the menu stays
+  open to show its new state) or the **M** key. The choice is stored in
+  `tower-studio.sound.v1`.
+- **Silent where Web Audio does not exist** — jsdom, very old browsers: `play()`
+  returns `false`, nothing throws, and no test needs an audio device.
+- **The top bar is untouched**: the row lives in the menu, so the one-row bar
+  keeps its five buttons on every laptop. The M key is documented in Shortcuts
+  & help.
+
+`window.TowerStudio.sound` is additive: `play(name)`, `setEnabled(on)`,
+`toggle()`, `enabled()`, `available()`, `names()`, `volume`. `tests/sound.test.mjs`
+drives the whole palette through a fake-audio device, and checks the two ways a
+synthesiser fails silently: a scheduled time that is not finite, and an
+exponential ramp to zero. It caught a real one — the throttle compared against a
+"never played" sentinel of 0, which swallowed the first long effect of every
+session because the page clock itself starts at zero.
+
+---
+
+## 18. What was not verified (pass 2)
+
+1. **No screenshots.** No browser binary is available in this environment, so
+   `screenshots/` was not regenerated and nobody — human or model — looked at a
+   rendered frame of pass 2. Every claim above is a measurement of the layout
+   arithmetic or of the DOM/CSS text.
+2. **Real text metrics.** The arithmetic uses approximate advance widths (Barlow
+   Condensed ≈ 0.5 em, Space Mono ≈ 0.6 em) for the wordmark and the buttons.
+   With the real webfonts loaded the top bar will be a few pixels narrower or
+   wider; the 360 px case has ~65 px of slack.
+3. **Touch, momentum scrolling, safe-area insets and the iOS URL bar** were not
+   exercised. Safe areas are honoured in CSS (`env(safe-area-inset-*)`), but on
+   a device this is untested.
+4. **The 3D camera offsets** are still only checked as arithmetic: the panel is
+   re-measured with `getBoundingClientRect`, which jsdom cannot answer, so the
+   `--sheet-h` value in a headless run is 0.
+
+## 19. Decisions taken without asking (pass 2)
+
+- **Gate strip = six labelled dots**, the first of the two options in A6. It
+  keeps the six gates permanently visible, keeps the pass/fail vocabulary
+  ("PASS"/"OPEN") that the Phase 3 tests guard, and needs no extra tap to answer
+  "how ready am I?".
+- **Guided uses dropdowns** where a card would otherwise hold five or more pills
+  (vendor, generation, link type, dish size, band, sector). The Engineer level
+  keeps the button grids. Both routes fire the same action, so the site model is
+  untouched.
+- **The `<select>`s dispatch through a throw-away button** that carries the same
+  `data-action` a real button would: one implementation of every state change,
+  one place where history is recorded, so a dropdown can never drift from its
+  button.
+- **"Nothing is removed" is literal**: a closed card is still in the DOM (hidden),
+  every `data-action` still renders, and the Engineer level shows the entire
+  control surface in one scroll.
+- **Sound is on by default, but quiet** (master gain 0.42, no effect above 0.16
+  peak), off until the first gesture by browser rule, and switchable from the
+  menu or with M. A silent-by-default studio that nobody switches on is not what
+  "add sound effects" means.
+- **The battery presets only map to option pairs the app already had**
+  (1×100, 2×150, 4×200 Ah); the default site still loads the Extended bank, so
+  no default number moved.

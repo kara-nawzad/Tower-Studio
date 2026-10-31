@@ -6,6 +6,8 @@ import * as THREE from "three";
 import { createStaticServer } from "../scripts/dev-server.mjs";
 import { ROOT_DIR, createHeadlessStudio } from "./helpers/headless.mjs";
 
+const HTML_APP = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
+
 test("project structure contains entry HTML, separated CSS/JS, docs, assets, and scripts", () => {
   const expectedPaths = [
     "index.html",
@@ -32,8 +34,10 @@ test("header branding displays INTERACTIVE 3D ENGINEERING SUITE without Phase 01
   const html = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
   const previewSvg = fs.readFileSync(path.join(ROOT_DIR, "assets/preview.svg"), "utf8");
 
-  assert.match(html, /<link\s+rel="stylesheet"\s+href="\.\/src\/styles\/main\.css"/);
-  assert.match(html, /<script\s+src="\.\/src\/js\/app\.js"><\/script>/);
+  // Both carry a cache-busting version: the preview iframe holds on to stale
+  // CSS and JS otherwise, which reads as "the fix did nothing".
+  assert.match(html, /<link\s+rel="stylesheet"\s+href="\.\/src\/styles\/main\.css\?v=[\w.]+"/);
+  assert.match(html, /<script\s+src="\.\/src\/js\/app\.js\?v=[\w.]+"><\/script>/);
   assert.doesNotMatch(html, /<style>/);
   assert.match(html, /three\.js\/r128\/three\.min\.js/);
 
@@ -75,16 +79,16 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   assert.equal(studio.state.onboarding.towerSelected, false);
   assert.equal(studio.state.masterStep, 1);
 
-  // Calm top HUD in setup mode (no 10 alarming red/green telemetry cells on initial load)
+  // Calm top HUD in setup mode: three cells, no alarming red/green telemetry.
   const livePill = document.getElementById("live-pill");
-  assert.equal(livePill.classList.contains("setup"), true);
   assert.equal(livePill.textContent.trim(), "SETTING UP");
+  assert.equal(document.getElementById("hud-chip-title").textContent, "SETTING UP");
 
   const hud = document.getElementById("site-hud");
   assert.equal(hud.classList.contains("is-setup"), true);
   assert.match(hud.textContent, /\[\s*Setting up\s*\]/);
   assert.equal(hud.querySelectorAll(".hud-cell.red, .hud-cell strong.red").length, 0);
-  assert.equal(hud.querySelectorAll(".hud-cell").length, 4);
+  assert.equal(hud.querySelectorAll(".hud-cell").length, 3);
 
   // Step 01 focuses purely on Tower Type & Height; tabs are hidden until Step 02
   const tabsBar = document.querySelector("#drawer .tabs");
@@ -97,13 +101,13 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   assert.equal(document.querySelector('[data-action="onboarding-next"]'), null);
 
   // Pick an allowed tower card -> reveals glowing [ Next: Select Vendor & Cabinet -> ] button
-  const fourLegBtn = document.querySelector(
-    '[data-action="tower"][data-value="LATTICE_ANGULAR_4LEG"]'
-  );
-  assert.ok(fourLegBtn, "4-leg angular lattice tower option should be rendered in Step 01");
+  const towerButtons = [...document.querySelectorAll('[data-action="tower"]:not([disabled])')];
+  assert.ok(towerButtons.length > 0, "Step 01 offers the towers this environment allows");
+  const before = studio.state.tower;
+  const fourLegBtn = towerButtons.find((button) => button.dataset.value !== before);
   fourLegBtn.click();
 
-  assert.equal(studio.state.tower, "LATTICE_ANGULAR_4LEG");
+  assert.equal(studio.state.tower, fourLegBtn.dataset.value);
   assert.equal(studio.state.onboarding.towerSelected, true);
   const nextBtn = document.querySelector('[data-action="onboarding-next"]');
   assert.ok(nextBtn, "Glowing Next button should appear once tower/height is chosen");
@@ -117,16 +121,25 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   // Phase 3: the three tabs are gone; every step is one scrolling panel.
   assert.equal(tabsBar.hidden, true);
   assert.equal(hud.classList.contains("is-setup"), false);
-  assert.equal(hud.querySelectorAll(".hud-cell").length, 11);
-  assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="ERICSSON"]'));
-  assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="HUAWEI"]'));
-  assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="NOKIA"]'));
+  // Step 02 owns a four-cell strip, never a scrollbar.
+  assert.equal(hud.querySelectorAll(".hud-cell").length, 4);
+  // Guided level picks the vendor from one dropdown; Engineer level keeps the
+  // three branded buttons.
+  const vendorSelect = document.querySelector('select[data-select-action="smart-vendor"]');
+  assert.ok(vendorSelect, "step 02 offers the vendor dropdown");
+  assert.deepEqual(
+    [...vendorSelect.options].map((option) => option.value),
+    ["ERICSSON", "HUAWEI", "NOKIA"]
+  );
 
   dom.window.close();
 });
 
 test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD throughput & backhaul", () => {
   const { dom, document, studio } = createHeadlessStudio({ width: 1440, height: 900 });
+  // Engineer level keeps the full vendor / generation button tree; Guided level
+  // reaches the same actions through two dropdowns.
+  studio.setDetailLevel("ENGINEER");
 
   // Enter Step 02 Configure
   studio.enterMasterStep(2);
@@ -155,7 +168,8 @@ test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD 
   assert.equal(studio.customGenerationMetrics().throughput, "42.2 Mbps");
   assert.equal(studio.customGenerationMetrics().backhaulMbps, 116);
 
-  const hudText2g3g = document.getElementById("site-hud").textContent;
+  const panelText = () => document.getElementById("hud-panel-grid").textContent;
+  const hudText2g3g = panelText();
   assert.match(hudText2g3g, /Cellular 2G\+3G42\.2 Mbps/);
   assert.match(hudText2g3g, /Backhaul speed116 Mbps/);
 
@@ -173,7 +187,7 @@ test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD 
   assert.equal(studio.customGenerationMetrics().backhaulMbps, 600);
   assert.match(studio.smartProfile().chassis, /DUW 30 digital unit \(WCDMA\) \+ Baseband 6630/);
 
-  const hudText3g4g = document.getElementById("site-hud").textContent;
+  const hudText3g4g = panelText();
   assert.match(hudText3g4g, /Cellular 3G\+4G342 Mbps/);
   assert.match(hudText3g4g, /Backhaul speed600 Mbps/);
 
@@ -183,7 +197,7 @@ test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD 
   assert.equal(studio.state.rack.slots.baseband, true);
   assert.equal(studio.customGenerationMetrics().throughput, "3.34 Gbps");
   assert.equal(studio.customGenerationMetrics().rfMode, "MIXED");
-  assert.match(document.getElementById("site-hud").textContent, /Backhaul speed3\.6 Gbps/);
+  assert.match(panelText(), /Backhaul speed3\.6 Gbps/);
 
   // Verify Huawei and Nokia vendor switching preserves Custom Multi-Gen card curation
   document.querySelector('[data-action="smart-vendor"][data-value="HUAWEI"]').click();
@@ -201,49 +215,52 @@ test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD 
   dom.window.close();
 });
 
-test("top telemetry bar horizontal scroller and responsive rules work at 1440px desktop and 390px mobile", () => {
+test("the status strip is a short, step-aware row that never scrolls", () => {
   const css = fs.readFileSync(path.join(ROOT_DIR, "src/styles/main.css"), "utf8");
+  // One row of at most five cells, clipped rather than scrolled, and no chevrons.
   assert.match(css, /\.site-hud\s*\{[\s\S]*?display:\s*flex/);
-  assert.match(css, /\.site-hud\s*\{[\s\S]*?overflow-x:\s*auto/);
-  assert.match(css, /\.site-hud\s*\{[\s\S]*?scrollbar-width:\s*thin/);
-  assert.match(css, /\.hud-cell\s*\{[\s\S]*?flex:\s*0\s+0\s+auto/);
-  assert.match(css, /\.site-hud-shell\.can-scroll-right::after/);
+  assert.match(css, /\.site-hud\s*\{[\s\S]*?overflow:\s*hidden/);
+  const hudRule = css.match(/\.site-hud\s*\{([\s\S]*?)\}/)[1];
+  assert.doesNotMatch(hudRule, /overflow-x/);
+  assert.doesNotMatch(HTML_APP, /hud-scroll-(left|right)/);
 
-  // Test 390px mobile viewport + horizontal HUD overflow & scroll chevrons
   const { dom, window, document, studio } = createHeadlessStudio({ width: 390, height: 844 });
+  studio.state.onboarding.active = false;
   studio.enterMasterStep(2);
 
   const shell = document.getElementById("site-hud-shell");
   const hud = document.getElementById("site-hud");
-  const leftBtn = document.getElementById("hud-scroll-left");
-  const rightBtn = document.getElementById("hud-scroll-right");
-  assert.ok(shell && hud && leftBtn && rightBtn);
-
-  // Simulate horizontal overflow on a 390px viewport
-  Object.defineProperty(hud, "clientWidth", { value: 350, configurable: true });
-  Object.defineProperty(hud, "scrollWidth", { value: 1460, configurable: true });
-  hud.scrollLeft = 0;
+  assert.ok(shell && hud);
+  // The shell may never grow a scroll affordance again.
   studio.syncHUDScroll();
+  assert.equal(shell.classList.contains("is-scrollable"), false);
+  assert.equal(shell.classList.contains("can-scroll-right"), false);
+  assert.equal(hud.scrollLeft, 0);
 
-  assert.equal(shell.classList.contains("is-scrollable"), true);
-  assert.equal(shell.classList.contains("can-scroll-left"), false);
-  assert.equal(shell.classList.contains("can-scroll-right"), true);
-  assert.equal(leftBtn.hidden, true);
-  assert.equal(rightBtn.hidden, false);
+  // The same chip carries the first three numbers on a phone.
+  const chip = document.getElementById("hud-chip");
+  assert.ok(chip, "the phone chip exists");
+  assert.match(chip.textContent, /LIVE MODEL/);
+  assert.match(chip.textContent, /\b\w+ · /, "the chip carries 2-3 numbers");
 
-  rightBtn.click();
-  studio.syncHUDScroll();
-  assert.ok(hud.scrollLeft > 0, "Clicking right chevron should advance horizontal scroll");
-  assert.equal(shell.classList.contains("can-scroll-left"), true);
-  assert.equal(leftBtn.hidden, false);
+  for (const width of [360, 390, 430, 768, 1024, 1366, 1920]) {
+    const probe = createHeadlessStudio({ width, height: 900 });
+    probe.studio.state.onboarding.active = false;
+    for (const step of [1, 2, 3, 4, 5]) {
+      probe.studio.setDetailLevel("ENGINEER");
+      probe.studio.enterMasterStep(step);
+      probe.studio.renderDrawer();
+      const cells = probe.document.querySelectorAll("#site-hud .hud-cell").length;
+      assert.ok(cells <= 5, `${width}px step ${step} shows ${cells} cells`);
+      assert.ok(cells >= 3, `${width}px step ${step} shows ${cells} cells`);
+      const grid = probe.document.querySelectorAll("#hud-panel-grid .hud-cell").length;
+      assert.equal(grid, 24, `${width}px step ${step} repeats every number in the panel`);
+      probe.studio.setDetailLevel("GUIDED");
+    }
+    probe.dom.window.close();
+  }
 
-  // Switch viewport to 1440px desktop and verify resize recalculates scroller state cleanly
-  window.innerWidth = 1440;
-  window.innerHeight = 900;
-  Object.defineProperty(hud, "clientWidth", { value: 1120, configurable: true });
   window.dispatchEvent(new window.Event("resize"));
-  assert.equal(shell.classList.contains("can-scroll-right"), true);
-
   dom.window.close();
 });
 
@@ -434,7 +451,7 @@ test("hero tab opens first with left logo/title, living nature layers, inverse 3
   assert.equal(document.body.classList.contains("hero-active"), false);
   assert.equal(hero.classList.contains("is-hidden"), true);
 
-  document.getElementById("hero-toggle").click();
+  document.querySelector('[data-action="menu-hero"]').click();
   assert.equal(studio.state.heroOpen, true);
   assert.equal(document.body.classList.contains("hero-active"), true);
 

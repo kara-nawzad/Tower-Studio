@@ -21,6 +21,7 @@ const VIEWPORT_QUERIES = {
   compact: "(max-width: 430px)",
   shortLandscape: "(max-height: 450px)",
   coarse: "(pointer: coarse)",
+  sidePanel: "(min-width: 1024px)",
 };
 
 const viewportQueries = {};
@@ -50,6 +51,15 @@ function isShortLandscape() {
 function isTouchPointer() {
   return matchesViewport("coarse");
 }
+// Pass 2 adds the two layout tiers the redesign actually uses: below 1024 the
+// controls live in a bottom sheet, at 1024 and above they live in a full-height
+// side panel.
+function isSheetViewport() {
+  return !matchesViewport("sidePanel");
+}
+function isSidePanelViewport() {
+  return matchesViewport("sidePanel");
+}
 
 const T = window.THREE;
 const $ = (selector) => document.querySelector(selector);
@@ -57,6 +67,461 @@ const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round = (value, digits = 1) => Number(value.toFixed(digits));
 const V3 = (x, y, z) => new T.Vector3(x, y, z);
+
+// ---------------------------------------------------------------------------
+// Sound: a synthesised engineering kit — no audio files, no dependencies
+// ---------------------------------------------------------------------------
+// Every effect is built from oscillators and one shared noise buffer at the
+// moment it is needed, so the page still ships one HTML file, one stylesheet and
+// one script. The palette follows the thing each sound stands for:
+//
+//   tick · select · step        the interface itself   dry clicks, short blips
+//   toggle · relay              switches and breakers  mechanism + contactor
+//   weld · servo · whoosh       the build              metal, motors, air
+//   sweep · alarm · onair       the radio              chirps, klaxon, lock
+//
+// Sounds are opt-out (menu · Sound effects, or the M key), remembered in
+// localStorage, and silent where Web Audio does not exist (jsdom, old browsers):
+// playSound() returns false there instead of throwing.
+const SOUND_STORAGE_KEY = "tower-studio.sound.v1";
+
+const SOUND_STATE = {
+  enabled: true,
+  volume: 0.42,
+  ctx: null,
+  master: null,
+  noise: null,
+  last: Object.create(null),
+  // A browser will not start audio until the page has been touched, so neither
+  // will the studio: the first pointerdown or key press wakes the kit, and the
+  // sounds that belong to that same gesture are the first ones heard.
+  awake: false,
+};
+
+// Minimum gap between two plays of the same effect, in ms: a drag fires `input`
+// dozens of times a second and a machine-gun ratchet is not a ratchet.
+const SOUND_GAPS = {
+  ratchet: 55,
+  tick: 35,
+  key: 30,
+  select: 45,
+  toggle: 60,
+  relay: 140,
+  servo: 450,
+  weld: 280,
+  sweep: 900,
+  alarm: 700,
+  whoosh: 280,
+  confirm: 200,
+  step: 200,
+  onair: 1200,
+  blocked: 200,
+  toast: 400,
+};
+
+// ---------------------------------------------------------------- building blocks
+function soundNoiseBuffer(ctx) {
+  if (SOUND_STATE.noise && SOUND_STATE.noise.sampleRate === ctx.sampleRate)
+    return SOUND_STATE.noise;
+  const rate = ctx.sampleRate || 44100;
+  const buffer = ctx.createBuffer(1, Math.floor(rate), rate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+  SOUND_STATE.noise = buffer;
+  return buffer;
+}
+
+// An attack/decay envelope, in the exponential domain Web Audio prefers. It
+// never reaches zero (that is a logarithmic ramp to -infinity) but 0.0001 is
+// quieter than anything a laptop speaker can reproduce.
+function soundEnvelope(ctx, gain, at, peak, attack, duration) {
+  const level = Math.max(0.0002, peak);
+  const hold = Math.max(0.002, attack);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(level, at + hold);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + Math.max(duration, hold + 0.02));
+}
+
+function soundTone(ctx, out, options) {
+  const {
+    type = "sine",
+    from = 440,
+    to = from,
+    at = 0,
+    dur = 0.1,
+    peak = 0.07,
+    filter = 0,
+  } = options;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(from, at);
+  if (to !== from) osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), at + dur);
+  soundEnvelope(ctx, gain, at, peak, Math.min(0.012, dur * 0.25), dur);
+  if (filter) {
+    const low = ctx.createBiquadFilter();
+    low.type = "lowpass";
+    low.frequency.setValueAtTime(filter, at);
+    osc.connect(low);
+    low.connect(gain);
+  } else {
+    osc.connect(gain);
+  }
+  gain.connect(out);
+  osc.start(at);
+  osc.stop(at + dur + 0.05);
+}
+
+function soundNoise(ctx, out, options) {
+  const {
+    at = 0,
+    dur = 0.05,
+    peak = 0.1,
+    type = "bandpass",
+    freq = 1800,
+    to = 0,
+    q = 1.2,
+  } = options;
+  const source = ctx.createBufferSource();
+  source.buffer = soundNoiseBuffer(ctx);
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.setValueAtTime(freq, at);
+  if (to) filter.frequency.exponentialRampToValueAtTime(Math.max(40, to), at + dur);
+  filter.Q.setValueAtTime(q, at);
+  const gain = ctx.createGain();
+  soundEnvelope(ctx, gain, at, peak, 0.006, dur);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(out);
+  source.start(at);
+  source.stop(at + dur + 0.05);
+}
+
+// ---------------------------------------------------------------- the kit
+const SOUND_RECIPES = {
+  // A dry click: a hardware button heard through a desk.
+  tick(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.028, peak: 0.14, freq: 2400, q: 9 });
+    soundTone(ctx, out, { at, dur: 0.02, from: 1240, to: 1020, peak: 0.05, type: "triangle" });
+  },
+  // Choosing an option: one short tuned blip.
+  select(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.07, from: 620, to: 780, peak: 0.07, type: "triangle" });
+  },
+  // A step of the master sequence: two rising notes, a relay picking up.
+  step(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.08, from: 392, peak: 0.07, type: "triangle" });
+    soundTone(ctx, out, { at: at + 0.08, dur: 0.12, from: 587, peak: 0.055, type: "triangle" });
+  },
+  // Something finished: a small major arpeggio.
+  confirm(ctx, out, at) {
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      soundTone(ctx, out, {
+        at: at + i * 0.07,
+        dur: 0.16,
+        from: freq,
+        peak: 0.055,
+        type: "triangle",
+      });
+    });
+  },
+  // Refused: a low filtered buzz, not a toy error sound.
+  blocked(ctx, out, at) {
+    soundTone(ctx, out, {
+      at,
+      dur: 0.2,
+      from: 150,
+      to: 110,
+      peak: 0.09,
+      type: "square",
+      filter: 700,
+    });
+    soundNoise(ctx, out, { at, dur: 0.06, peak: 0.08, freq: 260, q: 1.4 });
+  },
+  // A mechanical switch threw.
+  toggle(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.014, peak: 0.12, freq: 3000, q: 6 });
+    soundTone(ctx, out, {
+      at,
+      dur: 0.05,
+      from: 190,
+      to: 150,
+      peak: 0.07,
+      type: "square",
+      filter: 900,
+    });
+  },
+  // The fine ratchet of a slider passing a detent.
+  ratchet(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.012, peak: 0.06, freq: 4200, q: 14 });
+  },
+  // One key on a laptop keyboard, for the CLI.
+  key(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.008, peak: 0.05, freq: 3600, q: 12 });
+  },
+  // A breaker: the contactor closing, with the panel behind it.
+  relay(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.05, peak: 0.1, freq: 900, q: 1.1 });
+    soundTone(ctx, out, { at, dur: 0.16, from: 92, to: 48, peak: 0.16, type: "sine" });
+    soundTone(ctx, out, {
+      at: at + 0.01,
+      dur: 0.05,
+      from: 1800,
+      to: 1200,
+      peak: 0.05,
+      type: "square",
+      filter: 2400,
+    });
+  },
+  // Welding a bracket: a sizzle with a ringing metal tail.
+  weld(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.12, peak: 0.14, freq: 1700, q: 3 });
+    [1180, 1790, 2610].forEach((freq, i) => {
+      soundTone(ctx, out, {
+        at: at + 0.01 * i,
+        dur: 0.26,
+        from: freq,
+        to: freq * 0.97,
+        peak: 0.035,
+      });
+    });
+  },
+  // A camera move: a small servo winding.
+  servo(ctx, out, at) {
+    soundTone(ctx, out, {
+      at,
+      dur: 0.34,
+      from: 190,
+      to: 300,
+      peak: 0.05,
+      type: "sawtooth",
+      filter: 1200,
+    });
+  },
+  // A sheet of air: the hero opening, a panel sliding.
+  whoosh(ctx, out, at) {
+    soundNoise(ctx, out, { at, dur: 0.34, peak: 0.09, freq: 380, to: 2600, q: 0.9 });
+  },
+  // A line sweep running: out to the end and back.
+  sweep(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.36, from: 320, to: 1500, peak: 0.07 });
+    soundTone(ctx, out, { at: at + 0.4, dur: 0.32, from: 1500, to: 320, peak: 0.04 });
+  },
+  // A site alarm: the two-tone klaxon, short and quiet.
+  alarm(ctx, out, at) {
+    [0, 0.18, 0.36].forEach((offset, i) => {
+      soundTone(ctx, out, {
+        at: at + offset,
+        dur: 0.13,
+        from: i % 2 ? 940 : 760,
+        peak: 0.05,
+        type: "square",
+        filter: 2000,
+      });
+    });
+  },
+  // Carrier lock: the four-note rise, and the hum left behind it.
+  onair(ctx, out, at) {
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+      soundTone(ctx, out, {
+        at: at + i * 0.09,
+        dur: 0.22,
+        from: freq,
+        peak: 0.055,
+        type: "triangle",
+      });
+    });
+    soundTone(ctx, out, { at: at + 0.05, dur: 0.9, from: 110, peak: 0.035 });
+  },
+  // A toast: two ticks, the second a fifth up.
+  toast(ctx, out, at) {
+    soundTone(ctx, out, { at, dur: 0.05, from: 880, peak: 0.05 });
+    soundTone(ctx, out, { at: at + 0.06, dur: 0.05, from: 1320, peak: 0.035 });
+  },
+};
+
+// Which cue a drawer action deserves. Actions whose result is only known further
+// down the call chain (a sweep starting, a launch passing acceptance) return
+// null and play their own sound where the outcome is decided.
+const ACTION_SOUNDS = {
+  "card-toggle": "tick",
+  "fine-toggle": "tick",
+  tab: "tick",
+  "rack-trace": "tick",
+  "rack-patch": "tick",
+  "clear-selection": "tick",
+  "dismiss-gesture-hint": "tick",
+  "dismiss-locked-notice": "tick",
+  "dismiss-restore-notice": "tick",
+  "close-hud-panel": "tick",
+  "close-shortcuts": "tick",
+  "undo-recommended": "tick",
+  "copy-code": "key",
+  "battery-preset": "relay",
+  "power-source-mode": "relay",
+  "power-blackout": "relay",
+  "restore-grid": "relay",
+  "test-failover": "relay",
+  "cv-restore": "relay",
+  "rack-door-toggle": "toggle",
+  "rack-toggle": "toggle",
+  "custom-gen-toggle": "toggle",
+  "mw-auto-align": "servo",
+  "apply-recommended": "confirm",
+  "profile-confirm-apply": "confirm",
+  "profile-confirm-cancel": "tick",
+  "terminal-open": "whoosh",
+  "terminal-close": "whoosh",
+};
+
+const SILENT_ACTIONS = new Set([
+  "go-on-air",
+  "rf-onair",
+  "rf-run-sweep",
+  "acceptance-refresh",
+  "goto-step",
+  "onboarding-next",
+  "gate-jump",
+  "cli-command",
+  "ai-copilot",
+  "triage-choice",
+]);
+
+function soundForAction(action) {
+  if (!action || SILENT_ACTIONS.has(action)) return null;
+  return ACTION_SOUNDS[action] || "select";
+}
+
+// ---------------------------------------------------------------- playback
+function soundContext() {
+  if (SOUND_STATE.ctx) return SOUND_STATE.ctx;
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (typeof Ctor !== "function") return null;
+  try {
+    const ctx = new Ctor();
+    const master = ctx.createGain();
+    master.gain.value = SOUND_STATE.volume;
+    master.connect(ctx.destination);
+    SOUND_STATE.ctx = ctx;
+    SOUND_STATE.master = master;
+    return ctx;
+  } catch (_) {
+    return null;
+  }
+}
+
+function resumeSoundContext() {
+  const ctx = SOUND_STATE.ctx;
+  if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
+    try {
+      const started = ctx.resume();
+      if (started && typeof started.catch === "function") started.catch(() => {});
+    } catch (_) {
+      /* an audio context that refuses to start is not an error worth reporting */
+    }
+  }
+}
+
+function playSound(name) {
+  if (!SOUND_STATE.enabled || !SOUND_STATE.awake) return false;
+  const recipe = SOUND_RECIPES[name];
+  if (!recipe) return false;
+  const ctx = soundContext();
+  if (!ctx || !SOUND_STATE.master) return false;
+  // A context built outside a gesture starts suspended. Let it wake up, but do
+  // not queue this sound: it would arrive late, on top of the next one.
+  if (ctx.state === "suspended") {
+    resumeSoundContext();
+    return false;
+  }
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const gap = SOUND_GAPS[name] === undefined ? 40 : SOUND_GAPS[name];
+  // `in`, not a falsy check: the page clock starts at zero, so a "never played"
+  // sentinel of 0 would swallow the first long effect for the first second of
+  // the session.
+  if (name in SOUND_STATE.last && now - SOUND_STATE.last[name] < gap) return false;
+  SOUND_STATE.last[name] = now;
+  try {
+    recipe(ctx, SOUND_STATE.master, ctx.currentTime + 0.01);
+  } catch (_) {
+    return false;
+  }
+  return true;
+}
+
+function syncSoundMenu() {
+  const item = $('[data-action="menu-sound"]');
+  if (!item) return;
+  item.setAttribute("aria-checked", String(SOUND_STATE.enabled));
+  const detail = item.querySelector("small");
+  if (detail) detail.textContent = SOUND_STATE.enabled ? "On · M to mute" : "Muted · M to unmute";
+}
+
+function setSoundEnabled(on, options = {}) {
+  SOUND_STATE.enabled = Boolean(on);
+  try {
+    window.localStorage.setItem(SOUND_STORAGE_KEY, SOUND_STATE.enabled ? "on" : "off");
+  } catch (_) {
+    /* private mode: the setting simply does not survive the tab */
+  }
+  syncSoundMenu();
+  if (SOUND_STATE.enabled && options.silent !== true) {
+    resumeSoundContext();
+    playSound("confirm");
+  }
+  return SOUND_STATE.enabled;
+}
+
+function toggleSound() {
+  const on = setSoundEnabled(!SOUND_STATE.enabled);
+  if (typeof toast === "function") toast(on ? "SOUND · ON" : "SOUND · MUTED");
+  return on;
+}
+
+// The chrome around the drawer — the bar, the menu opener, the HUD chip and the
+// sheet handle — gets its clicks from one delegated listener rather than six.
+function bindSoundChrome() {
+  document.addEventListener("click", (event) => {
+    const control = event.target.closest
+      ? event.target.closest(
+          "#topbar button, #panel-tab, #sheet-handle, #hud-more, #hud-chip, #shortcuts-modal button, .modal-close"
+        )
+      : null;
+    if (!control) return;
+    const id = control.id;
+    if (
+      id === "terminal-toggle" ||
+      id === "panel-tab" ||
+      id === "sheet-handle" ||
+      id === "drawer-toggle"
+    ) {
+      playSound("whoosh");
+    } else {
+      playSound("tick");
+    }
+  });
+}
+
+function unlockSound() {
+  SOUND_STATE.awake = true;
+  resumeSoundContext();
+}
+
+function initSound() {
+  try {
+    SOUND_STATE.enabled = window.localStorage.getItem(SOUND_STORAGE_KEY) !== "off";
+  } catch (_) {
+    SOUND_STATE.enabled = true;
+  }
+  syncSoundMenu();
+  // The first gesture anywhere is what lets a browser start audio at all.
+  document.addEventListener("pointerdown", unlockSound, { capture: true, passive: true });
+  window.addEventListener("keydown", unlockSound, { capture: true });
+  bindSoundChrome();
+}
+
+initSound();
 
 const TOWERS = {
   LATTICE_TUBULAR_3LEG: {
@@ -320,7 +785,7 @@ const launch = {
 };
 
 st.ai = {
-  architectOpen: !isPhoneViewport(),
+  architectOpen: false,
   lastPrompt: "",
   // A parsed plan waiting for the user to confirm it before it is built.
   pendingPlan: null,
@@ -3509,7 +3974,7 @@ function rackLabelMaterial(text, dark = true) {
   context.fillStyle = dark ? "#0F172A" : "#F8FAFC";
   context.fillRect(0, 0, 768, 128);
   context.fillStyle = dark ? "#F8FAFC" : "#0F172A";
-  context.font = "700 43px 'Space Mono', monospace";
+  context.font = "700 43px 'Barlow Condensed', sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
   const fitted = text.length > 30 ? text.slice(0, 30) : text;
@@ -4930,6 +5395,21 @@ function buildLaunchFX() {
 }
 
 // Telecom return-loss acceptance limit used by every RF readout.
+// Shared by the "Run sweep" button and the recommended-settings shortcut.
+function startSectorSweep() {
+  if (cellularSim.running) return false;
+  cellularSim.running = true;
+  cellularSim.started = performance.now();
+  cellularSim.sector = st.cellular.sector;
+  cellularSim.lastProgress = -1;
+  st.cellular.sweeps[st.cellular.sector] = null;
+  st.cellular.aiDiagnostics[st.cellular.sector] = null;
+  renderDrawer();
+  toast(`SITE MASTER · SWEEPING SECTOR ${st.cellular.sector + 1}`);
+  playSound("sweep");
+  return true;
+}
+
 const RF_VSWR_LIMIT = 1.32;
 
 function calculateSweep(sectorIndex = st.cellular.sector) {
@@ -5703,23 +6183,6 @@ function renderPowerFlow() {
   return `<div class="power-flow"><span>GRID / GEN 1 / GEN 2</span><i>→</i><span>ATS</span><i>→</i><span>MDB</span><i>→</i><span>RECTIFIERS</span><i>→</i><span>-48V BUS + RADIOS</span><br><span>MDB → A/C BOARD → DUAL SPLITS</span></div>`;
 }
 
-function renderPowerOverview() {
-  const selected = registry.get(st.selectedId);
-  const content = POWER_CONTENT[selected.data.powerKey] || POWER_CONTENT["power-system"];
-  const calc = calculatePower();
-  return `${selected.data.powerKey === "power-system" ? renderPowerFlow() : ""}
-    <article class="power-hero" style="margin-top:10px">
-      <div class="power-hero-head"><div class="power-hero-icon">P2</div><div><div class="eyebrow">Plain-English component guide</div><h3>${content.title}</h3><p>${selected.data.title}</p></div><span class="power-domain-tag">POWER / PHASE 02</span></div>
-      <div class="plain-grid">
-        <div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div>
-        <div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>
-        <div class="plain-card"><small>03 · WHY DOES THE TOWER NEED IT?</small><p>${content.why}</p></div>
-      </div>
-    </article>
-    ${renderPowerLiveGrid()}${renderPowerAlarms()}${renderPowerActions()}
-    <p class="power-note">Live configuration: ${calc.installed} rectifier modules (${calc.required} required + ${Math.max(0, calc.installed - calc.required)} redundant) · ${st.power.batteryStrings} × ${st.power.batteryAh}Ah strings · estimated DC autonomy ${calc.autonomy.toFixed(1)} h at ${calc.dcLoad.toFixed(1)} kW.</p>`;
-}
-
 function sourceModeControls() {
   return `<div class="section-label">AC source architecture</div><div class="option-grid" style="grid-template-columns:1fr 1fr">
     <button class="option ${st.power.sourceMode === "GRID_WITH_STANDBY" ? "active" : ""}" data-action="power-source-mode" data-value="GRID_WITH_STANDBY">Grid + standby generator<small>Normal utility supply · Gen 1 automatic backup</small></button>
@@ -5991,20 +6454,23 @@ function selectedRackKey() {
   return selected && selected.data.domain === "rack" ? selected.data.rackKey : "cabinet";
 }
 
+function renderCustomGenerationChips() {
+  const custom = customGenerationMetrics();
+  if (st.generation !== "CUSTOM") return "";
+  return `<div class="custom-gen-panel" role="group" aria-label="Custom multi-generation toggles"><div class="custom-gen-label"><span>CUSTOM MULTI-GEN COMBINATION</span><span>${custom.label} · ${custom.throughput}</span></div><div class="custom-gen-chips">${Object.entries(
+    CUSTOM_GEN_CATALOG
+  )
+    .map(([genKey, item]) => {
+      const checked = custom.gens.includes(genKey);
+      return `<button type="button" class="custom-gen-chip ${checked ? "active" : ""}" data-action="custom-gen-toggle" data-value="${genKey}" aria-pressed="${checked}">[${checked ? `<i class="mark mark-ok" aria-hidden="true"></i>` : "&nbsp;"}] ${item.chip}</button>`;
+    })
+    .join("")}</div></div>`;
+}
+
 function renderSmartFilter(context) {
   const profile = smartProfile();
   const custom = customGenerationMetrics();
-  const customChips =
-    st.generation === "CUSTOM"
-      ? `<div class="custom-gen-panel" role="group" aria-label="Custom multi-generation toggles"><div class="custom-gen-label"><span>CUSTOM MULTI-GEN COMBINATION</span><span>${custom.label} · ${custom.throughput}</span></div><div class="custom-gen-chips">${Object.entries(
-          CUSTOM_GEN_CATALOG
-        )
-          .map(([genKey, item]) => {
-            const checked = custom.gens.includes(genKey);
-            return `<button type="button" class="custom-gen-chip ${checked ? "active" : ""}" data-action="custom-gen-toggle" data-value="${genKey}" aria-pressed="${checked}">[${checked ? `<i class="mark mark-ok" aria-hidden="true"></i>` : "&nbsp;"}] ${item.chip}</button>`;
-          })
-          .join("")}</div></div>`
-      : "";
+  const customChips = renderCustomGenerationChips();
   return `<section class="smart-filter" aria-label="Smart vendor and generation filter ${context}"><div class="smart-filter-head">HIERARCHICAL HARDWARE DECISION TREE · SHARED STEP 02 ↔ STEP 04</div><div class="smart-step"><div class="smart-step-label">STEP A · VENDOR<small>Select equipment ecosystem</small></div><div class="smart-options smart-vendors">${["ERICSSON", "HUAWEI", "NOKIA"].map((vendor) => `<button class="smart-option ${st.rack.vendor === vendor ? "active" : ""}" data-action="smart-vendor" data-value="${vendor}">${vendor}<small>${vendor === "ERICSSON" ? "RBS / AIR / Baseband" : vendor === "HUAWEI" ? "BBU / AAU / RTN" : "AirScale / MAA"}</small></button>`).join("")}</div></div><div class="smart-step"><div class="smart-step-label">STEP B · GENERATION<small>Curate all downstream hardware</small></div><div class="smart-options smart-generations">${Object.entries(
     SMART_GENERATIONS
   )
@@ -6097,76 +6563,6 @@ function renderRackElevation() {
     <div class="rack-shelf" style="--u:4"><div class="rack-shelf-label"><strong>SHELF 4 · 4U</strong>TRANSMISSION</div><div class="rack-slots">${rackSlotButton("router", slotName("router"), "1U half-width · IP backhaul")}${rackSlotButton("tdm", slotName("tdm"), "1U half-width · 8 × E1")}${rackSlotButton("amm", slotName("amm"), "Curated microwave backhaul")}</div></div>
     <div class="rack-shelf" style="--u:4"><div class="rack-shelf-label"><strong>BASE TRAY</strong>BATTERY + MGB</div><div class="rack-slots">${rackSlotButton("battery-tray", slotName("battery-tray"), `${st.power.batteryStrings} parallel strings · master earth`)}</div></div>
   </div>`;
-}
-
-function renderRackOverview() {
-  const key = selectedRackKey();
-  const content = rackCardContent(key);
-  const housing = rackHousing();
-  const title =
-    key === "cabinet" ? `${housing.vendor} ${housing.model} · 19-inch Cabinet` : content.title;
-  return `${renderRackNavigator()}
-    <article class="rack-hero" data-rack-hero="1">
-      <div class="rack-hero-head"><div class="rack-hero-icon">19″</div><div><h3>${title}</h3><p>${key === "cabinet" ? housing.description : "Selected from the live cabinet rack elevation."}</p></div><span class="rack-vendor-tag">${housing.vendor} / ${housing.ip}</span></div>
-      <div class="rack-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY IS IT DOUBLE-WIDE?</small><p>${content.why}</p></div>` : ""}</div>
-    </article>
-    ${renderRackActionStatus()}${renderRackActions()}${renderRackElevation()}`;
-}
-
-function renderRackConfigure() {
-  const housing = rackHousing();
-  const labels = {
-    fau: slotName("fau"),
-    baseband: slotName("baseband"),
-    dug: slotName("dug"),
-    duw: slotName("duw"),
-    scu: slotName("scu"),
-    shu: slotName("shu"),
-    sau: slotName("sau"),
-    router: slotName("router"),
-    tdm: slotName("tdm"),
-    amm: slotName("amm"),
-    ovp: slotName("ovp"),
-  };
-  return `<div class="section-label">Cabinet housing</div>
-    <p class="rack-note">Active housing: <strong>${housing.model}</strong> · ${housing.description} Change the vendor or generation with the profile tree at the top of this step.</p>
-    <div class="section-label">Installation & access</div>
-    <div class="rack-door-controls">
-      <button class="option ${st.rack.location === "INDOOR" ? "active" : ""}" data-action="rack-location" data-value="INDOOR" ${st.env === "URBAN_ROOFTOP" ? 'disabled title="Urban rooftop has no indoor shelter; outdoor IP55 is mandatory"' : ""}>Indoor shelter<small>${st.env === "URBAN_ROOFTOP" ? "Blocked · no shelter on rooftop" : `${rackHousingModel("INDOOR")} · indoor modular rack`}</small></button>
-      <button class="option ${st.rack.location === "OUTDOOR" ? "active" : ""}" data-action="rack-location" data-value="OUTDOOR">Outdoor IP55<small>${rackHousingModel("OUTDOOR")} · double door</small></button>
-      <button class="rack-action secondary" data-action="rack-door-toggle">[ ${rackSim.doorTarget > 0.5 ? "Close" : "Open"} Cabinet Door ]</button>
-      <button class="rack-action secondary" data-action="rack-select" data-value="rack-cabinet">[ Focus Complete Cabinet ]</button>
-    </div>
-    <div class="section-label">Radio shelf population</div>
-    <div class="control-card rack-control"><div class="control-row"><label for="rack-radio-count">${escapeHTML(slotName("radio"))} positions <span class="tag">SCALES RADIO LOAD</span></label><output class="control-value" id="rack-radio-count-value">${st.rack.radioCount} / 12</output></div><input type="range" id="rack-radio-count" data-rack-input="radio-count" min="0" max="12" step="1" value="${st.rack.radioCount}" style="--range-progress:${rangeProgress(st.rack.radioCount, 0, 12)}%"><div class="range-limits"><span>EMPTY 6U SHELF</span><span>12 RADIO UNITS</span></div></div>
-    <div class="section-label">Slot management <span class="tag">LIVE kW / HOURS / Gbps</span></div>
-    <div class="slot-manager">${Object.entries(labels)
-      .filter(([key]) => isRackSlotCurated(key))
-      .map(
-        ([key, label]) =>
-          `<div class="slot-manager-row"><button data-action="rack-select" data-value="rack-${key}">${label}<small>${RACK_SLOT_POWER[key] ? `${(RACK_SLOT_POWER[key] * 1000).toFixed(0)} W DC` : "Passive surge protection"}</small></button><button class="slot-install ${st.rack.slots[key] ? "remove" : ""}" data-action="rack-toggle" data-value="${key}">[ ${st.rack.slots[key] ? "REMOVE" : "INSTALL"} ]</button></div>`
-      )
-      .join("")}</div>
-    <div class="rack-profile-actions">
-      <button class="rack-action secondary" data-action="rack-reset-profile" ${
-        manualSlotCount() ? "" : "disabled"
-      }>[ RESET CARDS TO PROFILE DEFAULTS ]</button>
-      <span class="rack-note-inline">${
-        manualSlotCount()
-          ? `${manualSlotCount()} card${manualSlotCount() === 1 ? "" : "s"} fitted or removed by hand. Reset refits the ${escapeHTML(smartProfile().label || cellularGeneration().label)} profile defaults.`
-          : "Every card matches the active profile."
-      }</span>
-    </div>
-    <p class="rack-note">Removing a card empties its physical slot and immediately recalculates cabinet load, backup hours and service capacity. Router or TDM removal also opens the yellow patch link.</p>
-    ${renderRackActionStatus()}${renderRackActions()}`;
-}
-
-// The rack controls without the live-numbers block, which the panel renders
-// once in its own section.
-function renderRackControls() {
-  const full = renderRackConfigure();
-  const metrics = renderRackMetrics();
-  return full.includes(metrics) ? full.split(metrics).join("") : full;
 }
 
 function renderRackSpecs() {
@@ -6327,8 +6723,13 @@ function renderMwMeter() {
   const badgeClass = mw.locked ? "locked" : mw.alignmentError > 10 ? "weak" : "";
   return `<div class="section-label">Virtual dish-alignment multimeter <span class="tag">0.5–2.5V DC</span></div>
   <div class="mw-meter" data-meter style="--meter-progress:${progress}%"><div class="mw-meter-head"><span>ODU ALIGNMENT PORT</span><span>DC VOLTAGE ↔ RSL</span></div><div class="mw-meter-lcd" data-live="mw-voltage">${mw.voltage.toFixed(2)} V</div><div class="mw-meter-sub"><span data-live="mw-meter-rsl">RSL ${mw.rsl.toFixed(1)} dBm</span><span>ERROR <span data-live="mw-error">${mw.alignmentError.toFixed(1)}°</span></span></div><div class="mw-meter-track"><div class="mw-meter-fill"></div></div></div>
-  <div class="mw-link-badge ${badgeClass}" data-live-badge="mw-lock">${mw.locked ? "[ LINK LOCKED ]" : mw.alignmentError > 10 ? "[ WEAK RSL · KEEP TURNING ]" : "[ APPROACHING TARGET ]"}</div>
-  <div class="control-card mw-control"><div class="control-row"><label for="mw-azimuth">Dish azimuth</label><output class="control-value" id="mw-azimuth-value">${st.microwave.azimuth.toFixed(1)}°</output></div><input type="range" id="mw-azimuth" data-mw-input="azimuth" min="0" max="360" step="0.1" value="${st.microwave.azimuth}" style="--range-progress:${rangeProgress(st.microwave.azimuth, 0, 360)}%" aria-valuetext="${st.microwave.azimuth.toFixed(1)} degrees"><div class="range-limits"><span>0°</span><span>TARGET ${st.microwave.targetAzimuth.toFixed(1)}°</span><span>360°</span></div></div>`;
+  <div class="mw-link-badge ${badgeClass}" data-live-badge="mw-lock">${mw.locked ? "[ LINK LOCKED ]" : mw.alignmentError > 10 ? "[ WEAK RSL · KEEP TURNING ]" : "[ APPROACHING TARGET ]"}</div>`;
+}
+
+// Manual azimuth: the card only offers Auto-aim, so the slider lives in
+// Fine-tune with the rest of the mount details.
+function renderMwAzimuth() {
+  return `<div class="section-label">Manual azimuth</div><div class="control-card mw-control"><div class="control-row"><label for="mw-azimuth">Dish azimuth</label><output class="control-value" id="mw-azimuth-value">${st.microwave.azimuth.toFixed(1)}°</output></div><input type="range" id="mw-azimuth" data-mw-input="azimuth" min="0" max="360" step="0.1" value="${st.microwave.azimuth}" style="--range-progress:${rangeProgress(st.microwave.azimuth, 0, 360)}%" aria-valuetext="${st.microwave.azimuth.toFixed(1)} degrees"><div class="range-limits"><span>0°</span><span>TARGET ${st.microwave.targetAzimuth.toFixed(1)}°</span><span>360°</span></div></div>`;
 }
 
 function renderMwActions() {
@@ -6405,12 +6806,6 @@ function renderCellularHero() {
   return `<article class="mw-hero rf-hero"><div class="mw-hero-head"><div class="mw-hero-icon">RF</div><div><h3>${content.title}</h3><p>${kind === "aau" ? aauModel() : `${cellularGeneration().label} · Sector ${st.cellular.sector + 1} · selected from the live RF model`}</p></div></div><div class="mw-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · ${kind === "earth" ? "WHAT DOES IT DO?" : "WHAT DOES IT DO?"}</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY DOES IT POINT DOWN?</small><p>${content.why}</p></div>` : ""}</div></article>`;
 }
 
-function renderCellularControls() {
-  const index = st.cellular.sector,
-    sector = st.cellular.sectors[index];
-  return `<div class="section-label">Sector ${index + 1} steering & on-air state <span class="tag">120° RING</span></div><button class="rf-action ${sector.onAir ? "active" : ""}" data-action="rf-onair" aria-pressed="${sector.onAir}">[ Sector ${index + 1} ON-AIR: ${sector.onAir ? "ENABLED" : "MUTED"} ]</button><div class="control-card rf-control"><div class="control-row"><label for="rf-azimuth">Azimuth</label><output class="control-value" id="rf-azimuth-value">${sector.azimuth.toFixed(1)}°</output></div><input type="range" id="rf-azimuth" data-rf-input="azimuth" min="0" max="360" step="0.1" value="${sector.azimuth}" style="--range-progress:${rangeProgress(sector.azimuth, 0, 360)}%"><div class="range-limits"><span>0°</span><span>360°</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-downtilt">Electrical Downtilt (RET)</label><output class="control-value" id="rf-downtilt-value">${sector.downtilt.toFixed(1)}°</output></div><input type="range" id="rf-downtilt" data-rf-input="downtilt" min="0" max="10" step="0.1" value="${sector.downtilt}" style="--range-progress:${rangeProgress(sector.downtilt, 0, 10)}%"><div class="range-limits"><span>0° · HORIZON</span><span>10° · GROUND</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-tx-power">TX Power</label><output class="control-value" id="rf-tx-value">${sector.txPower.toFixed(0)} dBm · ${txPowerWatts(sector.txPower)} W</output></div><input type="range" id="rf-tx-power" data-rf-input="txPower" min="43" max="49" step="1" value="${sector.txPower}" style="--range-progress:${rangeProgress(sector.txPower, 43, 49)}%"><div class="range-limits"><span>43 dBm</span><span>49 dBm · 80 W</span></div></div><div class="section-label">Channel bandwidth <span class="tag">DISPLAY ONLY</span></div><div class="rf-bandwidth">${[20, 40, 100].map((bandwidth) => `<button class="mw-pill ${sector.bandwidth === bandwidth ? "active" : ""}" data-action="rf-bandwidth" data-value="${bandwidth}">${bandwidth} MHz</button>`).join("")}</div><p class="rf-explanation">Channel bandwidth is reported to the NOC and the vendor CLI but does not change the simulated DC load or coverage. RET tilts only the translucent RF radiation volume downward; the physical panel stays fixed on its upper-ring mount. Horizontal beamwidth: 65° · vertical beamwidth: 12°.</p>`;
-}
-
 function sweepGraph(result) {
   const faultDistance = result && result.fault ? result.faultDistance : null;
   const width = 640,
@@ -6445,21 +6840,6 @@ function sweepGraph(result) {
     : "";
   const color = result && result.fault ? "#DC2626" : "#059669";
   return `<svg class="rf-graph" id="rf-sweep-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive reflection versus distance graph from zero to sixty meters"><title>Site Master VSWR and distance-to-fault sweep</title>${grid}${distances}<text x="8" y="12" font-size="9" fill="#64748B">VSWR</text><text x="${width - right}" y="${height - 13}" text-anchor="end" font-size="9" fill="#64748B">DISTANCE</text><line x1="${left}" y1="${y(1.32)}" x2="${width - right}" y2="${y(1.32)}" stroke="#D97706" stroke-dasharray="5 4"/><text x="${width - right - 4}" y="${y(1.32) - 5}" text-anchor="end" font-size="9" fill="#92400E">LIMIT 1.32</text>${path ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>` : `<text x="${left + plotW / 2}" y="${top + plotH / 2}" text-anchor="middle" font-size="12" fill="#64748B">RUN SWEEP TO ACQUIRE DTF TRACE</text>`}${faultDistance !== null ? `<line x1="${x(faultDistance)}" y1="${top}" x2="${x(faultDistance)}" y2="${height - bottom}" stroke="#DC2626" stroke-dasharray="3 3"/><text x="${x(faultDistance) + 5}" y="${top + 13}" font-size="10" fill="#B91C1C">${faultDistance.toFixed(1)}m FAULT</text>` : ""}<g id="rf-cursor" style="display:none" pointer-events="none"><line id="rf-cursor-line" y1="${top}" y2="${height - bottom}" stroke="#2563EB"/><circle id="rf-cursor-dot" r="4" fill="#2563EB"/></g><rect id="rf-graph-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" fill="transparent" data-rf-graph="true"/></svg>`;
-}
-
-function renderSiteMaster() {
-  const index = st.cellular.sector,
-    result = st.cellular.sweeps[index];
-  const running = cellularSim.running && cellularSim.sector === index;
-  const diagnostic = st.cellular.aiDiagnostics[index];
-  const badge = running
-    ? "SWEEPING CABLE & ANTENNA…"
-    : result
-      ? result.fault
-        ? `VSWR: ${result.max.toFixed(2)} @ ${result.faultDistance.toFixed(1)} m [FAIL - High Reflection!]`
-        : `VSWR: ${result.max.toFixed(2)} [PASS]`
-      : "VSWR / DTF · SWEEP REQUIRED";
-  return `<section class="rf-testbench" aria-label="Interactive RF Testbench"><div class="rf-testbench-head"><h3>Virtual Site Master</h3><span>VSWR + DTF · 0–60m</span></div><button class="rf-action primary" data-action="rf-run-sweep" ${running ? "disabled" : ""}>[ Run RF Cable & Antenna Sweep ]</button><button class="rf-action ${st.cellular.fault ? "fault" : ""}" data-action="rf-fault" aria-pressed="${st.cellular.fault}">[ Simulate Waterlogged Connector / Cable Kink ]</button><div class="rf-sweep-badge ${running ? "running" : result ? (result.pass ? "pass" : "fail") : ""}" data-live="rf-sweep-badge">${badge}</div><div class="rf-progress" id="rf-sweep-progress" style="--sweep-progress:${running ? "0%" : result ? "100%" : "0%"}"><span></span></div>${sweepGraph(result)}<div class="rf-cursor-readout" id="rf-cursor-readout">${result ? "Move over or tap the trace to inspect distance and VSWR." : "The interactive trace appears after the sweep."}</div><p class="rf-explanation ${result && result.fault ? "fault" : ""}">${result ? (result.fault ? `Impedance mismatch detected at ${result.faultDistance.toFixed(1)} m. Possible water ingress or damaged connector. Risk of radio PA thermal shutdown.` : `Feeder and connectors are healthy. Peak reflection is ${result.max.toFixed(2)} and meets the telecom standard VSWR ≤ ${RF_VSWR_LIMIT.toFixed(2)}.`) : st.cellular.fault ? "Fault scenario armed. Run the sweep to locate the impedance mismatch by distance-to-fault analysis." : "Normal scenario armed. The analyzer will sweep the selected sector's feeder and antenna."}</p><button class="rf-action" data-action="rf-ai-diagnostic">[ AI Waveform Diagnostic ]</button>${diagnostic ? `<div class="rf-ai-diagnostic ${diagnostic.fault ? "fault" : ""}" id="rf-ai-result" role="status"><strong>${diagnostic.fault ? "NEURAL RF CLASSIFIER · FAULT" : "NEURAL RF CLASSIFIER · HEALTHY"}</strong><br>${diagnostic.fault ? `Peak contrast: ${diagnostic.contrast.toFixed(1)}% above the ${RF_VSWR_LIMIT.toFixed(2)} limit` : `Headroom: ${diagnostic.headroom.toFixed(1)}% below the ${RF_VSWR_LIMIT.toFixed(2)} limit`}<br>${diagnostic.message}<small>LOCAL 601-POINT INFERENCE · ${diagnostic.discontinuities} DISCONTINUITIES · NO NETWORK OR MODEL DOWNLOAD</small></div>` : ""}<button class="rf-action" data-action="rf-inspect-master">[ Inspect Handheld Site Master ]</button></section>`;
 }
 
 function renderCellularSpecs() {
@@ -6544,7 +6924,6 @@ function renderCellularSpecs() {
 function renderCellularView(tab) {
   const head = `${renderMwSystemToggle()}${renderSectorTabs()}`;
   if (tab === "specs") return `${head}${renderCellularSpecs()}`;
-  if (tab === "configure") return `${head}${renderCellularControls()}${renderSiteMaster()}`;
   return renderCellularPanel();
 }
 
@@ -6556,35 +6935,6 @@ function renderMicrowaveHero() {
       ? MW_CONTENT.symmetric
       : MW_CONTENT[kind] || MW_CONTENT.system;
   return `<article class="mw-hero"><div class="mw-hero-head"><div class="mw-hero-icon">μW</div><div><h3>${content.title}</h3><p>Selected from the live microwave transmission model.</p></div></div><div class="mw-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY IS IT IMPORTANT?</small><p>${content.why}</p></div>` : ""}</div></article>`;
-}
-
-function renderMicrowaveConfigure() {
-  if (st.microwave.system === "CELLULAR") return renderCellularView("configure");
-  const m = st.microwave,
-    mw = calculateMicrowave();
-  return `${renderMwSystemToggle()}<div class="section-label">Physical link topology <span class="tag">PAGES 92–98</span></div><div class="mw-topology-grid">${Object.entries(
-    MICROWAVE_TOPOLOGIES
-  )
-    .map(([key, topology]) => {
-      const blocked = key === "SD" && !spaceDiversityAllowed();
-      return `<button class="mw-pill ${m.topology === key ? "active" : ""}" data-action="mw-topology" data-value="${key}" ${blocked ? 'disabled title="Insufficient vertical mast clearance for 3–6m dish spacing"' : ""}>${topology.label}<small>${blocked ? "Blocked · insufficient mast clearance" : topology.detail}</small></button>`;
-    })
-    .join("")}</div>
-  <div class="section-label">Parabolic dish diameter</div><div class="mw-size-grid">${[0.3, 0.6, 1.2, 1.8, 2.4].map((diameter) => `<button class="mw-pill ${m.diameter === diameter ? "active" : ""}" data-action="mw-diameter" data-value="${diameter}">${diameter.toFixed(1)}m<small>${diameter >= 2.4 ? "Separate mount · −3 dB" : "Integrated ODU · 0 dB"}</small></button>`).join("")}</div>
-  <div class="section-label">Frequency band</div><div class="mw-size-grid">${[
-    [7, "Long rural hop"],
-    [15, "High-capacity relay"],
-    [23, "Standard urban"],
-    [38, "Short high-capacity"],
-  ]
-    .map(
-      ([band, detail]) =>
-        `<button class="mw-pill ${m.frequency === band ? "active" : ""}" data-action="mw-frequency" data-value="${band}">${band} GHz<small>${detail}</small></button>`
-    )
-    .join("")}</div>
-  ${m.topology === "SD" ? `<div class="section-label">Vertical dish spacing</div><div class="control-card mw-control"><div class="control-row"><label for="mw-spacing">Dish separation</label><output class="control-value" id="mw-spacing-value">${m.spacing.toFixed(1)} m</output></div><input type="range" id="mw-spacing" data-mw-input="spacing" min="3" max="6" step="0.5" value="${m.spacing}" style="--range-progress:${rangeProgress(m.spacing, 3, 6)}%"><div class="range-limits"><span>3m</span><span>6m</span></div></div>` : ""}
-  <div class="section-label">Mount & waveguide loss</div><div class="control-card"><div class="control-row"><span class="control-label">${mw.mountType === "INTEGRATED" ? "Integrated rear-hub ODU" : "Separate tower-pipe ODU + brass waveguide"}</span><strong class="control-value">−${mw.mountLoss.toFixed(1)} dB</strong></div><p class="control-note">${mw.mountType === "INTEGRATED" ? "Dishes ≤1.8m clip the ODU directly to the rear hub with no waveguide loss." : "The 2.4m dish uses a flexible brass waveguide. Its 3dB loss cuts transmit power in half."}</p></div>
-  ${renderMwActions()}`;
 }
 
 function renderMicrowaveSpecs() {
@@ -7007,6 +7357,7 @@ function cliResponse(command) {
 }
 
 function executeCLI(command, render = true) {
+  playSound("key");
   const raw = String(command ?? "").trim();
   if (!raw) return "";
   ensureTerminalWelcome();
@@ -7029,31 +7380,6 @@ function executeCLI(command, render = true) {
     scrollTerminalOutput();
   }
   return response;
-}
-
-function renderAcceptancePanel() {
-  const audit = calculateAcceptance();
-  const passed = audit.checks.filter((check) => check.pass).length;
-  return `<section class="acceptance-panel" aria-label="Carrier Site Acceptance Audit"><div class="acceptance-head"><div><h3>Carrier Site Acceptance Audit</h3><p>Pages 194–195 · live pre-flight punch-list</p></div><span class="acceptance-score ${audit.pass ? "pass" : "fail"}" id="acceptance-score">${passed}/6 ${audit.pass ? "ACCEPT" : "HOLD"}</span></div>${audit.checks.map((check) => `<article class="acceptance-item ${check.pass ? "pass" : "fail"}" data-audit="${check.id}"><span class="acceptance-icon"><i class="mark ${check.pass ? "mark-ok" : "mark-no"}" aria-hidden="true"></i></span><div class="acceptance-copy"><strong>${check.title}</strong><small>${check.value}</small><div class="acceptance-explanation">${check.explanation}</div></div></article>`).join("")}</section>`;
-}
-
-function renderPhase6Overview() {
-  const audit = calculateAcceptance();
-  const launchNote = launch.onAir
-    ? `Frequency lock confirmed · ${st.cellular.sectors.length} sectors radiating · backhaul vector locked · aviation beacon active.`
-    : audit.pass
-      ? "All six acceptance gates pass. The launch sequence is armed and ready."
-      : `LAUNCH INHIBITED · ${audit.checks
-          .filter((check) => !check.pass)
-          .map((check) => check.title)
-          .join(" · ")}`;
-  const blocked = audit.checks.filter((check) => !check.pass);
-  const blockedReason = launch.onAir
-    ? "The site is already on air."
-    : blocked.length
-      ? `Blocked by ${blocked.map((check) => check.title).join(" · ")}. ${blocked[0].explanation}`
-      : "";
-  return `${renderAcceptancePanel()}<section class="launch-panel"><button class="launch-action ${launch.onAir ? "operational" : ""}" data-action="go-on-air" ${!audit.pass || launch.onAir ? `disabled title="${escapeHTML(blockedReason)}"` : ""}>${launch.onAir ? "[ ON AIR — SITE OPERATIONAL ]" : "[ GO ON AIR ]"}</button><p class="launch-note ${launch.onAir || audit.pass ? "ready" : "blocked"}" id="launch-note">${launchNote}</p></section>${st.terminal.open ? renderTerminal() : `<section class="phase6-card"><h3>Multi-vendor CLI Console</h3><p>Open the docked ${st.rack.vendor} terminal to inspect live MOs, boards, radios, ports, alarms and configuration versions.</p><div class="phase6-actions"><button class="phase6-button primary" data-action="terminal-open">[ OPEN DOCKED TERMINAL ]</button><button class="phase6-button" data-action="acceptance-refresh">[ RE-RUN AUDIT ]</button></div></section>`}`;
 }
 
 function cvByName(name) {
@@ -7090,8 +7416,60 @@ function renderCVList() {
     .join("")}</div>`;
 }
 
-function renderPhase6Configure() {
-  return `<section class="phase6-card" style="margin-top:0"><h3>Launch &amp; Terminal Control</h3><p>Syntax: ${st.rack.vendor === "ERICSSON" ? "Moshell + Router IPOS" : st.rack.vendor === "HUAWEI" ? "Huawei MML" : "Nokia AirScale CLI"}. Change the vendor in Step 02 to re-target the same live site model.</p><div class="phase6-actions"><button class="phase6-button primary" data-action="terminal-open">[ ${st.terminal.open ? "SHOW" : "OPEN"} TERMINAL ]</button><button class="phase6-button" data-action="acceptance-refresh">[ RE-RUN ACCEPTANCE ]</button></div></section><section class="phase6-card"><h3>Configuration Versions</h3>${renderCVList()}</section><section class="phase6-card"><h3>Launch Interlock</h3><p>The master action is guarded in application state as well as by its disabled button. A later cable fault, grounding failure, power alarm or loss of link margin suspends On-Air mode.</p></section>`;
+function renderAcceptancePanel() {
+  const audit = calculateAcceptance();
+  const passed = audit.checks.filter((check) => check.pass).length;
+  return `<section class="acceptance-panel" aria-label="Carrier Site Acceptance Audit"><div class="acceptance-head"><div><h3>Carrier Site Acceptance Audit</h3><p>Pages 194–195 · live pre-flight punch-list</p></div><span class="acceptance-score ${audit.pass ? "pass" : "fail"}" id="acceptance-score">${passed}/6 ${audit.pass ? "ACCEPT" : "HOLD"}</span></div>${audit.checks.map((check) => `<article class="acceptance-item ${check.pass ? "pass" : "fail"}" data-audit="${check.id}"><span class="acceptance-icon"><i class="mark ${check.pass ? "mark-ok" : "mark-no"}" aria-hidden="true"></i></span><div class="acceptance-copy"><strong>${check.title}</strong><small>${check.value}</small><div class="acceptance-explanation">${check.explanation}</div></div></article>`).join("")}</section>`;
+}
+
+function renderGoOnAirCard() {
+  const audit = calculateAcceptance();
+  const launchNote = launch.onAir
+    ? `Frequency lock confirmed · ${st.cellular.sectors.length} sectors radiating · backhaul vector locked · aviation beacon active.`
+    : audit.pass
+      ? "All six acceptance gates pass. The launch sequence is armed and ready."
+      : `LAUNCH INHIBITED · ${audit.checks
+          .filter((check) => !check.pass)
+          .map((check) => check.title)
+          .join(" · ")}`;
+  const blocked = audit.checks.filter((check) => !check.pass);
+  const blockedReason = launch.onAir
+    ? "The site is already on air."
+    : blocked.length
+      ? `Blocked by ${blocked.map((check) => check.title).join(" · ")}. ${blocked[0].explanation}`
+      : "";
+  return `${renderAcceptancePanel()}<section class="launch-panel"><button class="launch-action ${launch.onAir ? "operational" : ""}" data-action="go-on-air" ${!audit.pass || launch.onAir ? `disabled title="${escapeHTML(blockedReason)}"` : ""}>${launch.onAir ? "[ ON AIR — SITE OPERATIONAL ]" : "[ GO ON AIR ]"}</button><p class="launch-note ${launch.onAir || audit.pass ? "ready" : "blocked"}" id="launch-note">${launchNote}</p></section>`;
+}
+
+// The CLI terminal sits behind its own card now, as the brief asks.
+function renderCliCard() {
+  if (st.terminal.open) return renderTerminal();
+  return `<section class="phase6-card" style="margin-top:0"><h3>Multi-vendor CLI Console</h3><p>Open the docked ${st.rack.vendor} terminal to inspect live MOs, boards, radios, ports, alarms and configuration versions.</p><div class="phase6-actions"><button class="phase6-button primary" data-action="terminal-open">[ OPEN CLI TERMINAL ]</button></div></section>`;
+}
+
+function renderPhase6Cards() {
+  const set = stepDone(5);
+  const cards = [
+    {
+      id: "gates",
+      title: "Gates and go on air",
+      done: set,
+      summary: launch.onAir
+        ? "Site on air"
+        : `${calculateAcceptance().checks.filter((check) => check.pass).length}/6 gates ready`,
+      body: renderGoOnAirCard(),
+    },
+    {
+      id: "cli",
+      title: "CLI terminal",
+      done: st.terminal.open,
+      summary: st.terminal.open ? "Terminal open" : `${st.rack.vendor} CLI · closed`,
+      body: renderCliCard(),
+    },
+  ];
+  return renderCardList(5, cards, {
+    fineTune: `<section class="phase6-card" style="margin-top:0"><h3>Acceptance and versions</h3><p>Re-run the audit after any change, and roll the site back to a saved configuration version.</p><div class="phase6-actions"><button class="phase6-button" data-action="acceptance-refresh">[ RE-RUN ACCEPTANCE ]</button></div>${renderCVList()}</section><section class="phase6-card"><h3>Launch Interlock</h3><p>The master action is guarded in application state as well as by its disabled button. A later cable fault, grounding failure, power alarm or loss of link margin suspends On-Air mode.</p></section>`,
+  });
 }
 
 function renderPhase6Specs() {
@@ -7149,6 +7527,7 @@ function goOnAir(preserveStep = false) {
   if (!audit.pass) {
     const failed = audit.checks.find((check) => !check.pass);
     toast(`LAUNCH INHIBITED · ${failed.title.toUpperCase()}`);
+    playSound("blocked");
     if (st.masterStep === 5) renderDrawer();
     return false;
   }
@@ -7171,6 +7550,7 @@ function goOnAir(preserveStep = false) {
   renderDrawer();
   updateHUD();
   toast("FREQUENCY LOCK · ALL THREE SECTORS ON AIR");
+  playSound("onair");
   return true;
 }
 
@@ -7200,7 +7580,7 @@ const chromeMetrics = { navHeight: 66, drawerHeight: 0, drawerWidth: 0, drawerLe
 function measureChrome() {
   const nav = $("#master-nav");
   const drawer = $("#drawer");
-  if (nav) chromeMetrics.navHeight = Math.max(48, nav.offsetHeight || 66);
+  if (nav) chromeMetrics.navHeight = Math.max(44, nav.offsetHeight || 48);
   if (drawer) {
     const rect = drawer.getBoundingClientRect();
     chromeMetrics.drawerHeight = rect.height;
@@ -7208,7 +7588,282 @@ function measureChrome() {
     chromeMetrics.drawerLeft = rect.left;
   }
   document.documentElement.style.setProperty("--nav-h", `${chromeMetrics.navHeight}px`);
+  // The floating view stack and the phone hint sit above the real sheet, so
+  // they need its measured height, not a guess.
+  document.documentElement.style.setProperty("--sheet-h", `${chromeMetrics.drawerHeight || 0}px`);
   return chromeMetrics;
+}
+
+// -------------------------------------------------------------------------
+// Chrome layout arithmetic (pass 2)
+// -------------------------------------------------------------------------
+// The browser does the real layout, but it is the only place that can, and
+// jsdom has no layout engine at all. So the *design* of the chrome — which box
+// sits where at a given viewport — is written down once, here, from the same
+// numbers the stylesheet uses (the --topbar-*, --hud-*, --nav-*, --view-* and
+// --panel-* tokens). The tests assert two things against it: no two boxes may
+// intersect, and the 3D area must keep its promised share of the viewport.
+const CHROME_TOKENS = {
+  gap: 8,
+  topbarTop: 10,
+  topbarH: 44,
+  hudTop: 62,
+  hudH: 40,
+  nav: 48,
+  viewBtn: 44,
+  viewGap: 6,
+  panelTop: 110,
+  panelBottom: 64,
+  panelMin: 420,
+  panelMax: 500,
+  panelVw: 0.32,
+  sheetPeek: 44,
+  sheetHalf: 0.4,
+  hintW: 232,
+  hintH: 56,
+  brandMark: 38,
+  statusChipW: 108,
+};
+
+// The phone and short-phone rules in main.css override the same tokens.
+function chromeTokensFor(width, height) {
+  const tokens = { ...CHROME_TOKENS };
+  if (width <= 767) {
+    Object.assign(tokens, {
+      topbarTop: 8,
+      topbarH: 44,
+      hudTop: 56,
+      hudH: 34,
+      nav: 48,
+      panelBottom: 64,
+      hintW: 208,
+      hintH: 62,
+      brandMark: 36,
+      statusChipW: 0,
+    });
+    if (height <= 700) {
+      Object.assign(tokens, {
+        topbarTop: 6,
+        topbarH: 40,
+        hudTop: 50,
+        hudH: 32,
+        nav: 44,
+        panelBottom: 56,
+      });
+    }
+  }
+  return tokens;
+}
+
+const rect = (left, top, width, height) => ({
+  left,
+  top,
+  right: left + width,
+  bottom: top + height,
+  width,
+  height,
+});
+
+// Rough advance widths, only ever used by the arithmetic above: Barlow
+// Condensed Bold is about half an em; the old typewriter face was about 0.6em.
+const textWidth = (text, size, factor) => Math.round(String(text).length * size * factor);
+
+function overlaps(a, b) {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+function unionArea(rects) {
+  const visible = rects.filter(Boolean);
+  if (!visible.length) return 0;
+  // Coordinate sweep: subtract the covered bands row by row.
+  const ys = [...new Set(visible.flatMap((r) => [r.top, r.bottom]))].sort((a, b) => a - b);
+  let area = 0;
+  for (let index = 0; index < ys.length - 1; index += 1) {
+    const top = ys[index];
+    const bottom = ys[index + 1];
+    if (bottom <= top) continue;
+    const spans = visible
+      .filter((r) => r.top <= top && r.bottom >= bottom)
+      .map((r) => [r.left, r.right])
+      .sort((a, b) => a[0] - b[0]);
+    let covered = 0;
+    let cursor = -Infinity;
+    for (const [left, right] of spans) {
+      const start = Math.max(left, cursor);
+      if (right > start) {
+        covered += right - start;
+        cursor = right;
+      }
+    }
+    area += covered * (bottom - top);
+  }
+  return area;
+}
+
+// Every fixed piece of chrome for one viewport, in viewport coordinates.
+// `options` mirrors the state that changes the layout: the sheet snap, whether
+// the panel is open, whether the one-time hint is still showing and whether the
+// AI dialog is open.
+function chromeLayout(width = window.innerWidth, height = window.innerHeight, options = {}) {
+  const t = chromeTokensFor(width, height);
+  const side = width >= 1024;
+  const phone = width <= 767;
+  const sheetSnap = options.sheet || st.sheet;
+  const panelOpen = options.drawerOpen === undefined ? st.drawerOpen : options.drawerOpen;
+  const hintVisible = options.hint === undefined ? !gestureHintSeen() : options.hint;
+  const aiOpen = options.ai === undefined ? !!st.ai.architectOpen : options.ai;
+  const engineer = options.detail ? options.detail === "ENGINEER" : isEngineerMode();
+  const boxes = {};
+
+  boxes.topbar = rect(t.gap, t.topbarTop, width - 2 * t.gap, t.topbarH);
+  const wordmark = textWidth(
+    "TOWER STUDIO",
+    phone ? (height <= 700 ? 20 : 22) : width >= 1280 ? 28 : 26,
+    0.5
+  );
+  const eyebrow = width >= 1280 ? 15 : 0;
+  boxes.brand = rect(
+    t.gap,
+    t.topbarTop,
+    t.brandMark + 8 + wordmark,
+    Math.max(t.brandMark, 28 + eyebrow)
+  );
+  const terminalW = textWidth("TERMINAL", 11, 0.62) + 20;
+  const actionsRight = width - t.gap;
+  const menuW = 40;
+  const undoW = side ? 46 : 0;
+  const chipW = width >= 1024 ? t.statusChipW : 0;
+  const actionsW = chipW + undoW * 2 + terminalW + menuW + 6 * 3;
+  // The status chip lives in the top bar from 1024 up; on smaller screens the
+  // single-line chip inside the HUD shell carries the same words.
+  boxes.statusChip =
+    chipW > 0 ? rect(actionsRight - actionsW, t.topbarTop, chipW, t.topbarH) : null;
+  boxes.topActions = rect(actionsRight - actionsW, t.topbarTop, actionsW, t.topbarH);
+
+  if (phone) {
+    // One single-line chip replaces the strip; the strip itself is hidden.
+    boxes.hud = null;
+  } else {
+    const cells = Math.min(5, 5);
+    boxes.hud = rect(t.gap, t.hudTop, Math.min(width - 2 * t.gap, 120 + cells * 118 + 108), t.hudH);
+  }
+
+  // Step bar.
+  const navW = Math.min(760, width - 2 * t.gap);
+  boxes.nav = rect((width - navW) / 2, height - t.gap - t.nav, navW, t.nav);
+
+  // Panel: bottom sheet below 1024, docked side panel at 1024 and above.
+  let sheetHeight = 0;
+  if (side) {
+    const panelW = clamp(width * t.panelVw, t.panelMin, t.panelMax);
+    boxes.drawer = panelOpen
+      ? rect(t.gap, t.panelTop, panelW, height - t.panelTop - t.panelBottom)
+      : null;
+    boxes.panelTab = panelOpen
+      ? null
+      : rect(t.gap, t.panelTop, t.viewBtn, Math.max(t.viewBtn, 132));
+    const free = {
+      left: panelOpen ? t.gap + panelW + t.viewGap : t.gap + t.viewBtn + t.viewGap,
+      top: t.hudTop + t.hudH,
+    };
+    boxes.viewControls = rect(
+      width - t.gap - t.viewBtn,
+      height - t.nav - 2 * t.gap - (3 * t.viewBtn + 2 * t.viewGap),
+      t.viewBtn,
+      3 * t.viewBtn + 2 * t.viewGap
+    );
+    boxes.hint =
+      hintVisible && !aiOpen
+        ? rect(
+            width - t.gap - t.viewBtn - 10 - t.hintW,
+            height - t.nav - 2 * t.gap - t.hintH,
+            t.hintW,
+            t.hintH
+          )
+        : null;
+    // The AI dialog lives inside the free part of the 3D area, so it never
+    // covers the panel, the strip, the step bar or the floating stack.
+    boxes.aiDialog = aiOpen
+      ? rect(
+          free.left + 12,
+          free.top + 12,
+          Math.max(240, width - (width - t.gap - t.viewBtn - 10) - free.left - 12),
+          Math.min(360, height - free.top - t.nav - 2 * t.gap - 24)
+        )
+      : null;
+  } else {
+    const maxHeight = height - t.hudTop - t.hudH - t.nav - 4 * t.gap;
+    if (sheetSnap === "peek") sheetHeight = t.sheetPeek;
+    else if (sheetSnap === "full") sheetHeight = maxHeight;
+    else sheetHeight = Math.min(height * t.sheetHalf, maxHeight);
+    if (!panelOpen) sheetHeight = 0;
+    const sheetW = phone ? width - 2 * t.gap : Math.min(720, width - 2 * t.gap);
+    boxes.drawer = panelOpen
+      ? rect((width - sheetW) / 2, height - t.nav - 2 * t.gap - sheetHeight, sheetW, sheetHeight)
+      : null;
+    // The floating stack sits above the sheet, never on it. When the sheet is
+    // at full height there is no 3D area left to zoom, so it stands down.
+    const stackHeight = 3 * t.viewBtn + 2 * t.viewGap;
+    const stackTop = height - t.nav - 2 * t.gap - sheetHeight - t.gap - stackHeight;
+    boxes.viewControls =
+      stackTop >= t.hudTop + t.hudH + 4
+        ? rect(width - t.gap - t.viewBtn, stackTop, t.viewBtn, stackHeight)
+        : null;
+    boxes.hint =
+      hintVisible && (sheetSnap !== "full" || !panelOpen)
+        ? rect(t.gap + 58, t.hudTop + t.hudH + 8, width - 2 * t.gap - 116, t.hintH)
+        : null;
+    boxes.aiDialog = aiOpen
+      ? rect(
+          t.gap,
+          t.hudTop + t.hudH + 8,
+          Math.min(560, width - 2 * t.gap),
+          Math.min(320, height - t.hudTop - t.hudH - t.nav - 72)
+        )
+      : null;
+  }
+
+  // Free 3D share: the viewport minus every chrome box drawn over it.
+  const blocks = [
+    boxes.topbar,
+    boxes.hud,
+    boxes.drawer,
+    boxes.nav,
+    boxes.viewControls,
+    boxes.hint,
+    boxes.aiDialog,
+    boxes.panelTab,
+  ].filter(Boolean);
+  const covered = unionArea(blocks);
+  const freeArea = Math.max(0, width * height - covered);
+  // The largest clear vertical band: what the camera actually frames.
+  const hudBottom = t.hudTop + t.hudH;
+  // On a sheet the band between the strip and the sheet is what the camera
+  // frames; with a side panel the whole height beside the panel stays clear.
+  const sheetTop = side
+    ? height - t.gap - t.nav
+    : boxes.drawer
+      ? boxes.drawer.top
+      : height - t.nav - 2 * t.gap;
+  const freeHeight = Math.max(0, sheetTop - hudBottom);
+  return {
+    width,
+    height,
+    mode: side ? "side" : phone ? "phone" : "tablet",
+    tokens: t,
+    detail: engineer ? "ENGINEER" : "GUIDED",
+    sheet: sheetSnap,
+    rects: boxes,
+    free: {
+      area: freeArea,
+      fraction: width * height ? freeArea / (width * height) : 0,
+      height: freeHeight,
+      heightFraction: height ? freeHeight / height : 0,
+      hudBottom,
+      sheetTop,
+      left: side ? (boxes.drawer ? boxes.drawer.right : t.gap) : 0,
+    },
+  };
 }
 
 // How much of the viewport the drawer covers, converted into frustum shifts.
@@ -7255,7 +7910,9 @@ function dismissGestureHint() {
 function updateGestureHint() {
   const hint = $("#gesture-hint");
   if (!hint) return;
-  hint.hidden = !(isTouchPointer() && !gestureHintSeen() && !st.heroOpen);
+  // One visit only, and never while it would sit on the open sheet.
+  const blockedBySheet = isSheetViewport() && st.drawerOpen && st.sheet === "full";
+  hint.hidden = gestureHintSeen() || st.heroOpen || blockedBySheet;
 }
 
 // --- bottom sheet snaps (phones only) --------------------------------------
@@ -7276,8 +7933,11 @@ function cycleSheet() {
 function applySheetSnap() {
   const drawer = $("#drawer");
   if (!drawer) return;
-  if (!isPhoneViewport()) {
+  document.body.classList.toggle("sheet-full", isSheetViewport() && st.sheet === "full");
+  if (!isSheetViewport()) {
     drawer.removeAttribute("data-sheet");
+    document.documentElement.style.setProperty("--sheet-h", "0px");
+    updateGestureHint();
     return;
   }
   drawer.setAttribute("data-sheet", st.sheet);
@@ -7291,7 +7951,10 @@ function applySheetSnap() {
           ? "Expand control panel fully"
           : "Collapse control panel"
     );
-  requestAnimationFrame(measureChrome);
+  requestAnimationFrame(() => {
+    measureChrome();
+    updateGestureHint();
+  });
 }
 
 // -------------------------------------------------------------------------
@@ -7583,6 +8246,7 @@ function historyLabelText(label) {
 }
 
 function undo() {
+  playSound("tick");
   if (!siteHistory.past.length) {
     toast("NOTHING TO UNDO");
     return false;
@@ -7598,6 +8262,7 @@ function undo() {
 }
 
 function redo() {
+  playSound("tick");
   if (!siteHistory.future.length) {
     toast("NOTHING TO REDO");
     return false;
@@ -7635,6 +8300,8 @@ const MUTATING_ACTIONS = new Set([
   "battery-strings",
   "battery-ah",
   "battery-type",
+  "battery-preset",
+  "apply-recommended",
   "power-source-mode",
   "mw-system",
   "mw-topology",
@@ -8239,16 +8906,27 @@ function parseAIArchitect(prompt) {
   };
 }
 
+// Pass 2: the architect is a dialog, not a permanent bar. It opens from the
+// menu, closes with Esc or its close button, and never sits on the scene.
 function setAIArchitectOpen(open) {
+  if (st.ai.architectOpen !== !!open) playSound(open ? "whoosh" : "tick");
   st.ai.architectOpen = !!open;
-  const bar = $("#ai-architect");
-  bar.classList.toggle("collapsed", !st.ai.architectOpen);
-  $("#ai-mobile-toggle").setAttribute("aria-expanded", String(st.ai.architectOpen));
+  const dialog = $("#ai-architect");
+  if (dialog) dialog.hidden = !st.ai.architectOpen;
+  const scrim = $("#ai-scrim");
+  if (scrim) scrim.hidden = !st.ai.architectOpen;
+  const menuItem = document.querySelector('[data-action="menu-ai"]');
+  if (menuItem) menuItem.setAttribute("aria-expanded", String(st.ai.architectOpen));
+  if (st.ai.architectOpen) {
+    const input = $("#ai-architect-input");
+    if (input) input.focus({ preventScroll: true });
+  }
+  measureChrome();
 }
 
 function syncAIArchitect() {
   const bar = $("#ai-architect");
-  bar.classList.toggle("collapsed", !st.ai.architectOpen);
+  if (bar) bar.classList.toggle("collapsed", !st.ai.architectOpen);
   $("#ai-build-button").disabled = aiBuild.running;
   document.querySelectorAll("[data-ai-scenario]").forEach((button) => {
     button.disabled = aiBuild.running;
@@ -8427,6 +9105,7 @@ function startManualAssembly(label) {
   aiBuild.intents = [];
   setAIBuildStatus(`ASSEMBLING · ${label}`);
   syncAIArchitect();
+  playSound("weld");
   return true;
 }
 
@@ -8861,47 +9540,6 @@ function applyTriageChoice(choice) {
   return "ERROR: Choose triage option 1, 2, 3 or 4.";
 }
 
-function renderOnboardingStep1() {
-  const env = ENVIRONMENTS[st.env];
-  const tower = TOWERS[st.tower];
-  const [min, max] = tower.range;
-  const progress = ((st.H - min) / (max - min)) * 100;
-  return `<div class="onboarding-banner">
-      <small>NEW SITE SETUP · STEP 01</small>
-      <h3>Choose Your Tower Structure</h3>
-      <p>Pick your site environment, select a tower type, and set its height. Vendor cabinets, power telemetry, and RF tools unlock progressively as you build.</p>
-    </div>
-    <div class="section-label">01 · Site environment</div>
-    <div class="option-grid">${Object.entries(ENVIRONMENTS)
-      .map(
-        ([key, item]) =>
-          `<button class="option ${st.env === key ? "active" : ""}" data-action="environment" data-value="${key}" aria-pressed="${st.env === key}">${item.name}<small>${item.wind} km/h · ${item.allowed.length} allowed ${item.allowed.length === 1 ? "type" : "types"}</small></button>`
-      )
-      .join("")}</div>
-    <div class="section-label">02 · Tower structure</div>
-    <div class="tower-grid">${Object.entries(TOWERS)
-      .map(([key, item]) => {
-        const allowed = env.allowed.includes(key);
-        const reason = allowed
-          ? `${item.range[0]}–${item.range[1]} m · ${item.detail}`
-          : towerDisallowedReason(st.env, key);
-        return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small>${allowed ? "" : '<span class="option-lock">Hidden for ' + escapeHTML(env.name) + "</span>"}</button>`;
-      })
-      .join("")}</div>
-    ${renderHiddenTowerLine(env)}
-    <div class="section-label">03 · Tower height</div>
-    <div class="control-card">
-      <div class="control-row"><label for="tower-height">Tower height</label><output class="control-value" id="height-value" for="tower-height">${st.H} m</output></div>
-      <input type="range" id="tower-height" min="${min}" max="${max}" step="1" value="${st.H}" style="--range-progress:${progress}%" aria-valuetext="${st.H} meters">
-      <div class="range-limits"><span>MIN ${min} m</span><span>STRUCTURAL LIMIT ${max} m</span></div>
-    </div>
-    ${
-      st.onboarding.towerSelected
-        ? `<div class="onboarding-next-wrap"><button type="button" class="onboarding-next-btn" data-action="onboarding-next" id="onboarding-next-btn">[ Next: Select Vendor &amp; Cabinet → ]</button></div>`
-        : `<div class="onboarding-hint">Select a tower structure or adjust height above to unlock Step 02 →</div>`
-    }`;
-}
-
 // -------------------------------------------------------------------------
 // Detail level and glossary (Phase 5)
 // -------------------------------------------------------------------------
@@ -9007,12 +9645,272 @@ function panelSection(title, body, tag, { advanced = false } = {}) {
   return `<section class="panel-section">${heading}${body}</section>`;
 }
 
+// -------------------------------------------------------------------------
+// Decision cards (pass 2)
+// -------------------------------------------------------------------------
+// A step is a short list of decisions, not a wall of controls.
+//   Guided   : one card open at a time, the first unfinished card opens when
+//              the step is entered, finished cards fold to a summary line with
+//              an Edit action, and every remaining control lives in Fine-tune.
+//   Engineer : every card and the Fine-tune card are open in one scroll.
+// Closed card bodies stay in the DOM (hidden) so no control is ever lost and
+// every window.TowerStudio action keeps working.
+const CARD_UI = { open: {}, fine: {}, done: {} };
+
+// A slider has to stay under the pointer for the whole drag. rebuildSite()
+// ends with renderDrawer(), and replacing the <input> mid-drag kills the drag —
+// which is why the thumb used to jump only when you clicked the track. While a
+// thumb is held, the drawer render is deferred and flushed on release.
+let rangeDrag = null;
+
+function beginRangeDrag() {
+  rangeDrag = { pending: false };
+}
+
+function endRangeDrag() {
+  if (!rangeDrag) return;
+  const pending = rangeDrag.pending;
+  rangeDrag = null;
+  if (pending) renderDrawer();
+}
+
+// A card only counts as finished once the user has actually changed something
+// inside it (or the step renderer says it was already answered). Everything
+// starts unfinished, so entering a step opens its first decision.
+function cardDone(step, id, initial = false) {
+  const record = CARD_UI.done[step];
+  if (record && record[id] !== undefined) return record[id];
+  return Boolean(initial);
+}
+
+function markCardDone(id) {
+  if (!id || id === "fine-tune") return;
+  const step = st.masterStep;
+  CARD_UI.done[step] = CARD_UI.done[step] || {};
+  CARD_UI.done[step][id] = true;
+}
+
+function cardOpenId(step, cards) {
+  const stored = CARD_UI.open[step];
+  const valid = stored === null || cards.some((card) => card.id === stored);
+  if (stored !== undefined && valid) return stored;
+  const first = cards.find((card) => !card.done) || cards[0];
+  CARD_UI.open[step] = first ? first.id : null;
+  return CARD_UI.open[step];
+}
+
+function resetCardState(step) {
+  delete CARD_UI.open[step];
+  delete CARD_UI.fine[step];
+}
+
+function decisionCardMarkup(card, index, { open, guided }) {
+  const state = open ? "OPEN" : card.done ? "EDIT" : "START";
+  const summary =
+    !open && card.summary ? `<span class="decision-summary">${card.summary}</span>` : "";
+  const head = `<span class="decision-index">${String(index + 1).padStart(2, "0")}</span>
+      <span class="decision-copy"><strong>${escapeHTML(card.title)}</strong>${summary}</span>
+      <span class="decision-state ${card.done && !open ? "done" : ""}">${state}</span>`;
+  const headMarkup = guided
+    ? `<button type="button" class="decision-head" data-action="card-toggle" data-value="${card.id}" aria-expanded="${open ? "true" : "false"}">${head}</button>`
+    : `<div class="decision-head">${head}</div>`;
+  return `<section class="decision-card ${open ? "is-open" : ""}" data-card="${card.id}">
+      ${headMarkup}
+      <div class="decision-body"${open ? "" : " hidden"}>${card.body}</div>
+    </section>`;
+}
+
+function fineTuneMarkup(step, body, guided) {
+  if (!body) return "";
+  const open = guided ? !!CARD_UI.fine[step] : true;
+  const head = `<span class="decision-index">+</span>
+      <span class="decision-copy"><strong>Fine-tune</strong><span class="decision-summary">Every other control for this step</span></span>
+      <span class="decision-state">${open ? "OPEN" : "MORE"}</span>`;
+  const headMarkup = guided
+    ? `<button type="button" class="decision-head" data-action="fine-toggle" aria-expanded="${open ? "true" : "false"}">${head}</button>`
+    : `<div class="decision-head">${head}</div>`;
+  return `<section class="decision-card fine-tune ${open ? "is-open" : ""}" data-card="fine-tune">
+      ${headMarkup}
+      <div class="decision-body"${open ? "" : " hidden"}>${body}</div>
+    </section>`;
+}
+
+function renderCardList(step, cards, { fineTune = "", footer = "", note = "" } = {}) {
+  const guided = !isEngineerMode();
+  const openId = guided ? cardOpenId(step, cards) : null;
+  const cardMarkup = cards
+    .map((card, index) =>
+      decisionCardMarkup(card, index, { open: guided ? card.id === openId : true, guided })
+    )
+    .join("");
+  return `<div class="decision-cards">${cardMarkup}${fineTuneMarkup(step, fineTune, guided)}${note}${footer}</div>`;
+}
+
+function renderStepContinue(step) {
+  if (step >= 5) return "";
+  const next = step + 1;
+  const gate = stepState(next);
+  return `<div class="step-continue"><button type="button" class="onboarding-next-btn" data-action="goto-step" data-value="${next}"${gate.state === "LOCKED" ? ` title="${escapeHTML(gate.reason)}"` : ""}><span>Continue · Step 0${next} · ${escapeHTML(STEP_TITLES[next])}</span><span class="onboarding-next-arrow" aria-hidden="true">&rarr;</span></button></div>`;
+}
+
+// One labelled dropdown, used in Guided level where a list of pills would
+// otherwise fill the sheet. The value is delivered through the same action the
+// buttons use, so nothing about the site model changes.
+function cardSelect(label, action, value, options) {
+  const id = `card-select-${action}`;
+  return `<label class="card-field-label" for="${id}">${escapeHTML(label)}</label><select class="card-select" id="${id}" data-select-action="${action}">${options
+    .map(
+      (option) =>
+        `<option value="${escapeHTML(String(option.value))}"${String(option.value) === String(value) ? " selected" : ""}>${escapeHTML(option.label)}</option>`
+    )
+    .join("")}</select>`;
+}
+
+function cardNote(text) {
+  return `<p class="card-note">${text}</p>`;
+}
+
+// "Recommended settings applied" with its own undo, per step.
+const RECOMMENDED = { applied: {} };
+
+function recommendRow(step, label, recompute) {
+  const applied = RECOMMENDED.applied[step];
+  return `<div class="recommend-row"><button type="button" class="phase6-button primary" data-action="${recompute}">[ ${escapeHTML(label)} ]</button>${
+    applied
+      ? `<span class="recommend-note" role="status">Recommended settings applied. <button type="button" class="phase6-button" data-action="undo-recommended" data-value="${step}">[ UNDO ]</button></span>`
+      : ""
+  }</div>`;
+}
+
+// "Use recommended" for a step: step 03 sizes N+1 and picks the Standard bank,
+// step 04 auto-peaks the dish. Both are ordinary, undoable state changes.
+function applyRecommended(step) {
+  if (step === 3) {
+    st.power.autoRectifiers = true;
+    st.power.batteryStrings = 2;
+    st.power.batteryAh = 150;
+    normalizePowerState();
+    startManualAssembly("BATTERY BANK");
+    rebuildSite();
+    toast("RECOMMENDED SETTINGS APPLIED · N+1 AUTO · STANDARD BANK");
+  } else if (step === 4) {
+    if (st.microwave.system === "CELLULAR") {
+      startSectorSweep();
+      toast("RECOMMENDED SETTINGS APPLIED · SECTOR SWEEP");
+    } else {
+      st.microwave.azimuth = st.microwave.targetAzimuth;
+      microwaveSim.azimuth = st.microwave.azimuth;
+      updateMicrowaveVisuals(performance.now());
+      updateLiveReadouts();
+      toast("RECOMMENDED SETTINGS APPLIED · LINK LOCKED");
+    }
+  }
+  RECOMMENDED.applied[step] = true;
+  updateHUD();
+  renderDrawer();
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Step 01 — environment, tower, height; protection is auto-set from them
+// ---------------------------------------------------------------------------
+function onboardingBanner() {
+  return `<div class="onboarding-banner">
+      <small>NEW SITE SETUP · STEP 01</small>
+      <h3>Choose Your Tower Structure</h3>
+      <p>Pick your site environment, select a tower type, and set its height. Vendor cabinets, power telemetry, and RF tools unlock progressively as you build.</p>
+    </div>`;
+}
+
+function renderOnboardingFooter() {
+  if (!st.onboarding.active) return renderStepContinue(1);
+  return st.onboarding.towerSelected
+    ? `<div class="onboarding-next-wrap"><button class="onboarding-next-btn" data-action="onboarding-next" id="onboarding-next-btn" type="button"><span>Next: Select Vendor &amp; Cabinet</span><span class="onboarding-next-arrow" aria-hidden="true">&rarr;</span></button></div>`
+    : `<div class="onboarding-hint">Select a tower structure or adjust height above to unlock Step 02 &rarr;</div>`;
+}
+
+function renderSiteCards() {
+  const env = ENVIRONMENTS[st.env];
+  const tower = TOWERS[st.tower];
+  const [min, max] = tower.range;
+  const progress = ((st.H - min) / (max - min)) * 100;
+  const set = !st.onboarding.active;
+  const towers = Object.entries(TOWERS)
+    .filter(([key]) => isEngineerMode() || env.allowed.includes(key))
+    .map(([key, item]) => {
+      const allowed = env.allowed.includes(key);
+      const reason = allowed
+        ? `${item.range[0]}–${item.range[1]} m · ${item.detail}`
+        : towerDisallowedReason(st.env, key);
+      return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small>${allowed ? "" : `<span class="option-lock">Hidden for ${escapeHTML(env.name)}</span>`}</button>`;
+    })
+    .join("");
+  const cards = [
+    {
+      id: "environment",
+      title: "Environment",
+      done: cardDone(1, "environment", set),
+      summary: `${env.name} · ${env.wind} km/h design wind`,
+      body: `<div class="option-grid">${Object.entries(ENVIRONMENTS)
+        .map(
+          ([key, item]) =>
+            `<button class="option ${st.env === key ? "active" : ""}" data-action="environment" data-value="${key}" aria-pressed="${st.env === key}">${item.name}<small>${item.wind} km/h · ${item.allowed.length} allowed ${item.allowed.length === 1 ? "type" : "types"}</small></button>`
+        )
+        .join("")}</div>`,
+    },
+    {
+      id: "tower",
+      title: "Tower",
+      done: cardDone(1, "tower", st.onboarding.towerSelected || set),
+      summary: `${tower.short} · ${st.H} m`,
+      body: `<div class="tower-grid">${towers}</div>${renderHiddenTowerLine(env)}`,
+    },
+    {
+      id: "height",
+      title: "Height",
+      done: cardDone(1, "height", st.onboarding.towerSelected || set),
+      summary: `${st.H} m · structural limit ${max} m`,
+      body: `<div class="control-card">
+        <div class="control-row"><label for="tower-height">Tower height</label><output class="control-value" id="height-value" for="tower-height">${st.H} m</output></div>
+        <input type="range" id="tower-height" min="${min}" max="${max}" step="1" value="${st.H}" style="--range-progress:${progress}%" aria-valuetext="${st.H} meters">
+        <div class="range-limits"><span>MIN ${min} m</span><span>STRUCTURAL LIMIT ${max} m</span></div>
+        <p class="control-note">Geometry, foundation reactions, wind area and torsional checks update with height.</p>
+      </div>`,
+    },
+  ];
+  const protection = cardNote(
+    `<strong>Auto-set:</strong> ${st.lightning === "ESE_ACTIVE" ? "Active ESE" : "Passive Franklin rod"} + ${calc_earthPits(
+      env
+    )} earth pits${env.mandatoryGrounding ? " (required)" : ""}. Why: the site environment fixes the lightning capture radius and the earthing obligation, so they are never a free choice here.`
+  );
+  return renderCardList(1, cards, {
+    fineTune: `<div class="section-label">Protection (only when the environment allows it)</div>
+      <div class="option-grid" style="grid-template-columns:1fr 1fr">
+        <button class="option rod-option ${st.lightning === "FRANKLIN" ? "active" : ""}" data-action="lightning" data-value="FRANKLIN" ${env.mandatoryESE ? 'disabled title="Active ESE is mandatory in the 160 km/h exposed mountain zone."' : ""}>Passive Franklin Rod<small>${env.mandatoryESE ? "Not permitted on mountain peak" : "Copper spike · 45° protective cone"}</small></button>
+        <button class="option rod-option ${st.lightning === "ESE_ACTIVE" ? "active" : ""}" data-action="lightning" data-value="ESE_ACTIVE">Active ESE Terminal<small>AMPER · 50 m safety umbrella${env.mandatoryESE ? " · MANDATORY" : ""}</small></button>
+      </div>
+      <label class="switch-card ${env.mandatoryGrounding ? "disabled" : ""}" ${env.mandatoryGrounding ? 'title="Cadweld earth pits and 70 mm² bonding are mandatory on mountain peaks."' : ""}>
+        <input type="checkbox" id="grounding-toggle" ${st.grounding ? "checked" : ""} ${env.mandatoryGrounding ? "disabled" : ""}>
+        <span class="switch-track"></span>
+        <span class="switch-copy"><strong>70 mm² fence bonding + Cadweld earth pits</strong><small>Bond posts every 10 m, bridge the gate hinge and connect the lightning down conductor.</small></span>
+        ${env.mandatoryGrounding ? '<span class="lock">LOCKED · REQUIRED</span>' : ""}
+      </label>
+      <p class="control-note">Power, backup and climate have their own step: continue to <strong>Step 03 · Power</strong> once the structure is defined.</p>`,
+    note: protection,
+    footer: renderOnboardingFooter(),
+  });
+}
+
+function calc_earthPits(env) {
+  const calc = calculateEngineering();
+  return env === "URBAN_ROOFTOP" ? "building earth" : `${calc.earthPits} Cadweld`;
+}
+
 function renderStepPanel() {
   if (st.masterStep === 5) return renderPhase6Panel();
   if (isTransmissionMode()) return renderTransmissionSubNav() + renderMicrowavePanel();
-  if (isRackMode()) return renderSmartFilter("step2") + renderRackPanel();
-  if (isPowerSelection()) return renderPowerSubNav() + renderPowerPanel();
-  if (st.onboarding.active && st.masterStep === 1 && !st.selectedId) return renderOnboardingStep1();
+  if (isRackMode()) return renderRackPanel();
+  if (isPowerSelection()) return renderPowerPanel();
   return renderSitePanel();
 }
 
@@ -9030,68 +9928,461 @@ function renderTransmissionSubNav() {
 // Read-only reminder of the profile chosen in step 02.
 function renderProfileChip() {
   const profile = smartProfile();
-  return `<div class="profile-chip" role="note"><span class="profile-chip-label">EQUIPMENT PROFILE · SET IN STEP 02</span><strong>${escapeHTML(st.rack.vendor)} · ${escapeHTML(cellularGeneration().label)}</strong><small>${escapeHTML(profile.chassis)}</small><button type="button" class="phase6-button" data-action="goto-step" data-value="2">[ CHANGE IN STEP 02 ]</button></div>`;
+  return `<div class="profile-chip" role="note"><span class="profile-chip-label">EQUIPMENT PROFILE · SET IN STEP 02</span><strong>${escapeHTML(st.rack.vendor)} · ${escapeHTML(cellularGeneration().label)}</strong><small>${escapeHTML(profile.chassis)}</small>${
+    isEngineerMode()
+      ? '<button type="button" class="phase6-button" data-action="goto-step" data-value="2">[ CHANGE IN STEP 02 ]</button>'
+      : ""
+  }</div>`;
+}
+
+function renderLinkTypeControl() {
+  const options = [
+    ["STANDALONE", "Simple 1+0"],
+    ["HSB", "Protected 1+1"],
+    ["XPIC2", "High capacity 2+0 XPIC"],
+    ["XPIC4", "Extra 4+0 XPIC"],
+  ];
+  if (!isEngineerMode())
+    return `${cardSelect(
+      "Link type",
+      "mw-topology",
+      st.microwave.topology,
+      options.map(([key, label]) => ({
+        value: key,
+        label: `${label} · ${MICROWAVE_TOPOLOGIES[key].detail}`,
+      }))
+    )}<p class="card-note">The link type fixes how many dishes, radios and modems the tower carries. Space diversity is in Fine-tune.</p>`;
+  return `<div class="mw-topology-grid">${options
+    .map(
+      ([key, label]) =>
+        `<button class="mw-pill ${st.microwave.topology === key ? "active" : ""}" data-action="mw-topology" data-value="${key}">${label}<small>${MICROWAVE_TOPOLOGIES[key].detail}</small></button>`
+    )
+    .join("")}</div>`;
+}
+
+function renderDishControl() {
+  const m = st.microwave;
+  const sizes = [0.3, 0.6, 1.2, 1.8, 2.4];
+  const bands = [
+    [7, "7 GHz · long rural hop"],
+    [15, "15 GHz · high-capacity relay"],
+    [23, "23 GHz · standard urban"],
+    [38, "38 GHz · short high-capacity"],
+  ];
+  const size = isEngineerMode()
+    ? `<div class="mw-size-grid">${sizes
+        .map(
+          (diameter) =>
+            `<button class="mw-pill ${m.diameter === diameter ? "active" : ""}" data-action="mw-diameter" data-value="${diameter}">${diameter.toFixed(1)}m<small>${diameter >= 2.4 ? "Separate mount · −3 dB" : "Integrated ODU · 0 dB"}</small></button>`
+        )
+        .join("")}</div>`
+    : cardSelect(
+        "Dish diameter",
+        "mw-diameter",
+        m.diameter,
+        sizes.map((diameter) => ({
+          value: diameter,
+          label: `${diameter.toFixed(1)} m${diameter >= 2.4 ? " · separate mount, −3 dB" : ""}`,
+        }))
+      );
+  const band = isEngineerMode()
+    ? `<div class="mw-size-grid">${bands
+        .map(
+          ([frequency, label]) =>
+            `<button class="mw-pill ${m.frequency === frequency ? "active" : ""}" data-action="mw-frequency" data-value="${frequency}">${frequency} GHz<small>${label.split("· ")[1]}</small></button>`
+        )
+        .join("")}</div>`
+    : cardSelect(
+        "Frequency band",
+        "mw-frequency",
+        m.frequency,
+        bands.map(([frequency, label]) => ({ value: frequency, label }))
+      );
+  const mw = calculateMicrowave();
+  return `<div class="section-label">Parabolic dish diameter</div>${size}
+    <div class="section-label">Frequency band</div>${band}
+    <p class="card-note">Gain ${mw.gain.toFixed(2)} dBi · mount ${mw.mountType === "INTEGRATED" ? "integrated rear hub" : `separate pipe + waveguide (−${mw.mountLoss.toFixed(1)} dB)`}.</p>`;
+}
+
+function renderMicrowaveCards() {
+  const mw = calculateMicrowave();
+  const set = stepDone(4);
+  const cards = [
+    {
+      id: "link",
+      title: "Link type",
+      done: cardDone(4, "link", set),
+      summary: MICROWAVE_TOPOLOGIES[st.microwave.topology].label,
+      body: renderLinkTypeControl(),
+    },
+    {
+      id: "dish",
+      title: "Dish size and band",
+      done: cardDone(4, "dish", set),
+      summary: `${st.microwave.diameter.toFixed(1)} m · ${st.microwave.frequency} GHz`,
+      body: renderDishControl(),
+    },
+    {
+      id: "aim",
+      title: "Aim",
+      done: cardDone(4, "aim", Boolean(mw.locked)),
+      summary: mw.locked ? "Link locked" : `${mw.alignmentError.toFixed(1)}° off target`,
+      body: `${renderMwMeter()}<button class="mw-action" type="button" data-action="mw-auto-align">[ Auto-aim at ${st.microwave.targetAzimuth.toFixed(1)}° ]</button>`,
+    },
+  ];
+  return renderCardList(4, cards, {
+    fineTune: `${renderMwSystemToggle()}<div class="section-label">Space diversity and spacing</div>${renderSpaceDiversity()}
+      <div class="section-label">Polarization and mount</div><div class="mw-topology-grid">${renderMwActions()}</div>
+      ${renderMwAzimuth()}${renderMountDetails()}${renderMicrowaveHero()}`,
+    note: recommendRow(4, "Use recommended", "apply-recommended"),
+    footer: renderStepContinue(4),
+  });
+}
+
+function renderSpaceDiversity() {
+  const blocked = !spaceDiversityAllowed();
+  return `<button class="mw-pill ${st.microwave.topology === "SD" ? "active" : ""}" data-action="mw-topology" data-value="SD" ${blocked ? 'disabled title="Insufficient vertical mast clearance for 3–6m dish spacing"' : ""}>1+1 Space Diversity<small>${blocked ? "Blocked · insufficient mast clearance" : MICROWAVE_TOPOLOGIES.SD.detail}</small></button>
+    ${st.microwave.topology === "SD" ? `<div class="control-card mw-control"><div class="control-row"><label for="mw-spacing">Dish separation</label><output class="control-value" id="mw-spacing-value">${st.microwave.spacing.toFixed(1)} m</output></div><input type="range" id="mw-spacing" data-mw-input="spacing" min="3" max="6" step="0.5" value="${st.microwave.spacing}" style="--range-progress:${rangeProgress(st.microwave.spacing, 3, 6)}%"><div class="range-limits"><span>3m</span><span>6m</span></div></div>` : ""}`;
+}
+
+function renderMountDetails() {
+  const mw = calculateMicrowave();
+  return `<div class="section-label">Mount & waveguide loss</div><div class="control-card"><div class="control-row"><span class="control-label">${mw.mountType === "INTEGRATED" ? "Integrated rear-hub ODU" : "Separate tower-pipe ODU + brass waveguide"}</span><strong class="control-value">−${mw.mountLoss.toFixed(1)} dB</strong></div><p class="control-note">${mw.mountType === "INTEGRATED" ? "Dishes ≤1.8m clip the ODU directly to the rear hub with no waveguide loss." : "The 2.4m dish uses a flexible brass waveguide. Its 3dB loss cuts transmit power in half."}</p></div>`;
 }
 
 function renderMicrowavePanel() {
   if (st.microwave.system === "CELLULAR") return renderCellularPanel();
   return (
-    renderMicrowaveHero() +
-    panelSection("Live numbers", renderMwMetrics() + renderMwMeter(), "LINK BUDGET") +
-    panelSection("Configure", renderMicrowaveConfigure()) +
+    panelSection("Live numbers", renderMwMetrics(), "LINK BUDGET") +
+    panelSection("Configure", renderMicrowaveCards()) +
     panelSection("Specs and details", renderMicrowaveSpecs(), "PRELIMINARY", { advanced: true })
   );
 }
 
 function renderCellularPanel() {
   return (
-    renderSectorTabs() +
-    renderCellularHero() +
-    panelSection("Live numbers", renderCellularMetrics() + renderSiteMaster(), "PER SECTOR") +
-    panelSection("Configure", renderCellularControls()) +
+    panelSection("Live numbers", renderCellularMetrics(), "PER SECTOR") +
+    panelSection("Configure", renderCellularCards()) +
     panelSection("Specs and details", renderCellularSpecs(), "", { advanced: true })
   );
 }
 
+function renderSectorControl() {
+  const names = ["Alpha", "Beta", "Gamma"];
+  if (!isEngineerMode())
+    return `${cardSelect(
+      "Sector",
+      "rf-sector",
+      st.cellular.sector,
+      names.map((name, index) => ({ value: index, label: `Sector ${index + 1} · ${name}` }))
+    )}${renderSectorOnAir()}`;
+  return renderSectorTabs() + renderSectorOnAir();
+}
+
+function renderSectorOnAir() {
+  const index = st.cellular.sector;
+  const sector = st.cellular.sectors[index];
+  return `<button class="rf-action ${sector.onAir ? "active" : ""}" type="button" data-action="rf-onair" aria-pressed="${sector.onAir}">[ Sector ${index + 1} ON-AIR: ${sector.onAir ? "ENABLED" : "MUTED"} ]</button>`;
+}
+
+function renderCellularAim() {
+  const sector = st.cellular.sectors[st.cellular.sector];
+  return `<div class="control-card rf-control"><div class="control-row"><label for="rf-azimuth">Azimuth</label><output class="control-value" id="rf-azimuth-value">${sector.azimuth.toFixed(1)}°</output></div><input type="range" id="rf-azimuth" data-rf-input="azimuth" min="0" max="360" step="0.1" value="${sector.azimuth}" style="--range-progress:${rangeProgress(sector.azimuth, 0, 360)}%"><div class="range-limits"><span>0°</span><span>360°</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-downtilt">Electrical Downtilt (RET)</label><output class="control-value" id="rf-downtilt-value">${sector.downtilt.toFixed(1)}°</output></div><input type="range" id="rf-downtilt" data-rf-input="downtilt" min="0" max="10" step="0.1" value="${sector.downtilt}" style="--range-progress:${rangeProgress(sector.downtilt, 0, 10)}%"><div class="range-limits"><span>0° · HORIZON</span><span>10° · GROUND</span></div></div>`;
+}
+
+function renderCableCheck() {
+  const index = st.cellular.sector;
+  const result = st.cellular.sweeps[index];
+  const running = cellularSim.running && cellularSim.sector === index;
+  const badge = running
+    ? "SWEEPING CABLE & ANTENNA…"
+    : result
+      ? result.fault
+        ? `VSWR: ${result.max.toFixed(2)} @ ${result.faultDistance.toFixed(1)} m [FAIL - High Reflection!]`
+        : `VSWR: ${result.max.toFixed(2)} [PASS]`
+      : "VSWR / DTF · SWEEP REQUIRED";
+  return `<section class="rf-testbench" aria-label="Interactive RF Testbench"><div class="rf-testbench-head"><h3>Virtual Site Master</h3><span>VSWR + DTF · 0–60m</span></div><button class="rf-action primary" type="button" data-action="rf-run-sweep" ${running ? "disabled" : ""}>[ Run RF Cable & Antenna Sweep ]</button><div class="rf-sweep-badge ${running ? "running" : result ? (result.pass ? "pass" : "fail") : ""}" data-live="rf-sweep-badge">${badge}</div><div class="rf-progress" id="rf-sweep-progress" style="--sweep-progress:${running ? "0%" : result ? "100%" : "0%"}"><span></span></div>${sweepGraph(result)}<div class="rf-cursor-readout" id="rf-cursor-readout">${result ? "Move over or tap the trace to inspect distance and VSWR." : "The interactive trace appears after the sweep."}</div><p class="rf-explanation ${result && result.fault ? "fault" : ""}">${result ? (result.fault ? `Impedance mismatch detected at ${result.faultDistance.toFixed(1)} m. Possible water ingress or damaged connector. Risk of radio PA thermal shutdown.` : `Feeder and connectors are healthy. Peak reflection is ${result.max.toFixed(2)} and meets the telecom standard VSWR ≤ ${RF_VSWR_LIMIT.toFixed(2)}.`) : st.cellular.fault ? "Fault scenario armed. Run the sweep to locate the impedance mismatch by distance-to-fault analysis." : "Normal scenario armed. The analyzer will sweep the selected sector's feeder and antenna."}</p></section>`;
+}
+
+function renderRfFineTune() {
+  const index = st.cellular.sector;
+  const sector = st.cellular.sectors[index];
+  const diagnostic = st.cellular.aiDiagnostics[index];
+  return `<div class="section-label">Transmit power and channel</div>
+    <div class="control-card rf-control"><div class="control-row"><label for="rf-tx-power">TX Power</label><output class="control-value" id="rf-tx-value">${sector.txPower.toFixed(0)} dBm · ${txPowerWatts(sector.txPower)} W</output></div><input type="range" id="rf-tx-power" data-rf-input="txPower" min="43" max="49" step="1" value="${sector.txPower}" style="--range-progress:${rangeProgress(sector.txPower, 43, 49)}%"><div class="range-limits"><span>43 dBm</span><span>49 dBm · 80 W</span></div></div>
+    <div class="section-label">Channel bandwidth <span class="tag">DISPLAY ONLY</span></div><div class="rf-bandwidth">${[20, 40, 100].map((bandwidth) => `<button class="mw-pill ${sector.bandwidth === bandwidth ? "active" : ""}" data-action="rf-bandwidth" data-value="${bandwidth}">${bandwidth} MHz</button>`).join("")}</div>
+    <div class="section-label">Fault scenario and diagnostics</div>
+    <button class="rf-action ${st.cellular.fault ? "fault" : ""}" type="button" data-action="rf-fault" aria-pressed="${st.cellular.fault}">[ Simulate Waterlogged Connector / Cable Kink ]</button>
+    <button class="rf-action" type="button" data-action="rf-ai-diagnostic">[ AI Waveform Diagnostic ]</button>
+    ${diagnostic ? `<div class="rf-ai-diagnostic ${diagnostic.fault ? "fault" : ""}" id="rf-ai-result" role="status"><strong>${diagnostic.fault ? "NEURAL RF CLASSIFIER · FAULT" : "NEURAL RF CLASSIFIER · HEALTHY"}</strong><br>${diagnostic.fault ? `Peak contrast: ${diagnostic.contrast.toFixed(1)}% above the ${RF_VSWR_LIMIT.toFixed(2)} limit` : `Headroom: ${diagnostic.headroom.toFixed(1)}% below the ${RF_VSWR_LIMIT.toFixed(2)} limit`}<br>${diagnostic.message}<small>LOCAL 601-POINT INFERENCE · ${diagnostic.discontinuities} DISCONTINUITIES · NO NETWORK OR MODEL DOWNLOAD</small></div>` : ""}
+    <button class="rf-action" type="button" data-action="rf-inspect-master">[ Inspect Handheld Site Master ]</button>
+    <p class="rf-explanation">RET tilts only the translucent RF radiation volume downward; the physical panel stays fixed on its upper-ring mount. Horizontal beamwidth: 65° · vertical beamwidth: 12°.</p>${renderCellularHero()}`;
+}
+
+function renderCellularCards() {
+  const sector = st.cellular.sectors[st.cellular.sector];
+  const result = st.cellular.sweeps[st.cellular.sector];
+  const set = stepDone(4);
+  const cards = [
+    {
+      id: "sector",
+      title: "Sector",
+      done: set,
+      summary: `Sector ${st.cellular.sector + 1} · ${sector.onAir ? "on air" : "muted"}`,
+      body: renderSectorControl(),
+    },
+    {
+      id: "aim",
+      title: "Aim",
+      done: set,
+      summary: `${sector.azimuth.toFixed(1)}° azimuth · ${sector.downtilt.toFixed(1)}° downtilt`,
+      body: renderCellularAim(),
+    },
+    {
+      id: "cable",
+      title: "Check the cable",
+      done: Boolean(result),
+      summary: result
+        ? `VSWR ${result.max.toFixed(2)} ${result.pass ? "PASS" : "FAIL"}`
+        : "No sweep yet",
+      body: renderCableCheck(),
+    },
+  ];
+  // The sector tabs live in the Sector card; Fine-tune starts at the radio.
+  return renderCardList(4, cards, {
+    fineTune: renderRfFineTune(),
+    footer: renderStepContinue(4),
+  });
+}
+
+function renderRackHero() {
+  const key = selectedRackKey();
+  const content = rackCardContent(key);
+  const housing = rackHousing();
+  const title =
+    key === "cabinet" ? `${housing.vendor} ${housing.model} · 19-inch Cabinet` : content.title;
+  return `<article class="rack-hero" data-rack-hero="1">
+    <div class="rack-hero-head"><div class="rack-hero-icon">19″</div><div><h3>${title}</h3><p>${key === "cabinet" ? housing.description : "Selected from the live cabinet rack elevation."}</p></div><span class="rack-vendor-tag">${housing.vendor} / ${housing.ip}</span></div>
+    <div class="rack-plain ${content.why ? "three" : ""}"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div>${content.why ? `<div class="plain-card"><small>03 · WHY IS IT DOUBLE-WIDE?</small><p>${content.why}</p></div>` : ""}</div>
+  </article>`;
+}
+
+function renderRackLocation() {
+  const housing = rackHousing();
+  if (st.env === "URBAN_ROOFTOP") {
+    // No real choice exists on a rooftop: one line instead of two dead buttons.
+    return `<p class="card-note"><strong>Outdoor IP55 only</strong> · ${rackHousingModel("OUTDOOR")} · urban rooftop has no indoor shelter, so the cabinet type is not a choice here.</p>
+      <button class="rack-action secondary" type="button" data-action="rack-door-toggle">[ ${rackSim.doorTarget > 0.5 ? "Close" : "Open"} Cabinet Door ]</button>`;
+  }
+  return `<div class="rack-door-controls">
+      <button class="option ${st.rack.location === "INDOOR" ? "active" : ""}" data-action="rack-location" data-value="INDOOR">Indoor shelter<small>${rackHousingModel("INDOOR")} · indoor modular rack</small></button>
+      <button class="option ${st.rack.location === "OUTDOOR" ? "active" : ""}" data-action="rack-location" data-value="OUTDOOR">Outdoor IP55<small>${rackHousingModel("OUTDOOR")} · double door</small></button>
+    </div>
+    <button class="rack-action secondary" type="button" data-action="rack-door-toggle">[ ${rackSim.doorTarget > 0.5 ? "Close" : "Open"} Cabinet Door ]</button>
+    <p class="card-note">Active housing: <strong>${housing.model}</strong> · ${housing.description}</p>`;
+}
+
+function renderRackConfig() {
+  const labels = {
+    fau: slotName("fau"),
+    baseband: slotName("baseband"),
+    dug: slotName("dug"),
+    duw: slotName("duw"),
+    scu: slotName("scu"),
+    shu: slotName("shu"),
+    sau: slotName("sau"),
+    router: slotName("router"),
+    tdm: slotName("tdm"),
+    amm: slotName("amm"),
+    ovp: slotName("ovp"),
+  };
+  return `<div class="section-label">Radio shelf population</div>
+    <div class="control-card rack-control"><div class="control-row"><label for="rack-radio-count">${escapeHTML(slotName("radio"))} positions <span class="tag">SCALES RADIO LOAD</span></label><output class="control-value" id="rack-radio-count-value">${st.rack.radioCount} / 12</output></div><input type="range" id="rack-radio-count" data-rack-input="radio-count" min="0" max="12" step="1" value="${st.rack.radioCount}" style="--range-progress:${rangeProgress(st.rack.radioCount, 0, 12)}%"><div class="range-limits"><span>EMPTY 6U SHELF</span><span>12 RADIO UNITS</span></div></div>
+    <div class="section-label">Slot management <span class="tag">LIVE kW / HOURS / Gbps</span></div>
+    <div class="slot-manager">${Object.entries(labels)
+      .filter(([key]) => isRackSlotCurated(key))
+      .map(
+        ([key, label]) =>
+          `<div class="slot-manager-row"><button data-action="rack-select" data-value="rack-${key}">${label}<small>${RACK_SLOT_POWER[key] ? `${(RACK_SLOT_POWER[key] * 1000).toFixed(0)} W DC` : "Passive surge protection"}</small></button><button class="slot-install ${st.rack.slots[key] ? "remove" : ""}" data-action="rack-toggle" data-value="${key}">[ ${st.rack.slots[key] ? "REMOVE" : "INSTALL"} ]</button></div>`
+      )
+      .join("")}</div>
+    <div class="rack-profile-actions">
+      <button class="rack-action secondary" data-action="rack-reset-profile" ${
+        manualSlotCount() ? "" : "disabled"
+      }>[ RESET CARDS TO PROFILE DEFAULTS ]</button>
+      <span class="rack-note-inline">${
+        manualSlotCount()
+          ? `${manualSlotCount()} card${manualSlotCount() === 1 ? "" : "s"} fitted or removed by hand. Reset refits the ${escapeHTML(smartProfile().label || cellularGeneration().label)} profile defaults.`
+          : "Every card matches the active profile."
+      }</span>
+    </div>
+    <p class="rack-note">Removing a card empties its physical slot and immediately recalculates cabinet load, backup hours and service capacity. Router or TDM removal also opens the yellow patch link.</p>`;
+}
+
+function renderRackCards() {
+  const housing = rackHousing();
+  const cards = [
+    {
+      id: "profile",
+      title: "Equipment profile",
+      done: cardDone(2, "profile"),
+      summary: `${st.rack.vendor} · ${cellularGeneration().label}`,
+      body: isEngineerMode()
+        ? renderSmartFilter("step2")
+        : `<div class="smart-filter"><div class="vendor-grid">${cardSelect(
+            "Vendor",
+            "smart-vendor",
+            st.rack.vendor,
+            [
+              { value: "ERICSSON", label: "ERICSSON · RBS / AIR / Baseband" },
+              { value: "HUAWEI", label: "HUAWEI · BBU / AAU / RTN" },
+              { value: "NOKIA", label: "NOKIA · AirScale / MAA" },
+            ]
+          )}</div>${cardSelect(
+            "Generation",
+            "smart-generation",
+            st.generation,
+            Object.entries(SMART_GENERATIONS).map(([generation, data]) => ({
+              value: generation,
+              label: `${data.label} · ${generation === "CUSTOM" ? customGenerationMetrics().throughput : data.throughput}`,
+            }))
+          )}${st.generation === "CUSTOM" ? renderCustomGenerationChips() : ""}<div class="smart-profile">ACTIVE PROFILE · ${smartProfile().chassis}</div></div>`,
+    },
+    {
+      id: "cabinet",
+      title: "Cabinet type",
+      done: cardDone(2, "cabinet", true),
+      summary:
+        st.env === "URBAN_ROOFTOP"
+          ? "Outdoor IP55 · rooftop"
+          : `${st.rack.location === "INDOOR" ? "Indoor shelter" : "Outdoor IP55"} · ${housing.model}`,
+      body: renderRackLocation(),
+    },
+    {
+      id: "inspect",
+      title: "Check the cabinet",
+      done: cardDone(2, "inspect", rackSim.patchProgress >= 1 && rackSim.alarmBadge),
+      summary: `Rack elevation · ${st.rack.radioCount} radio positions`,
+      body: renderRackElevation() + renderRackActionStatus() + renderRackActions(),
+    },
+  ];
+  return renderCardList(2, cards, {
+    fineTune: `${renderRackNavigator()}${renderRackHero()}${renderRackConfig()}`,
+    footer: renderStepContinue(2),
+  });
+}
+
 function renderRackPanel() {
   return (
-    renderRackOverview() +
     panelSection("Live numbers", renderRackMetrics(), "LIVE kW / HOURS / Gbps") +
-    panelSection("Configure", renderRackControls()) +
+    panelSection("Configure", renderRackCards()) +
     panelSection("Specs and details", renderRackSpecs(), "PRELIMINARY", { advanced: true })
   );
 }
 
-function renderPowerSubNav() {
-  return renderPowerNavigator();
+// Step 03 decisions: where the power comes from, how much battery, and a
+// blackout you can actually run. Everything else is in Fine-tune.
+const BATTERY_PRESETS = [
+  { id: "short", label: "Short", strings: 1, ah: 100 },
+  { id: "standard", label: "Standard", strings: 2, ah: 150 },
+  { id: "extended", label: "Extended", strings: 4, ah: 200 },
+];
+
+function currentBatteryPreset() {
+  return (
+    BATTERY_PRESETS.find(
+      (preset) => preset.strings === st.power.batteryStrings && preset.ah === st.power.batteryAh
+    ) || null
+  );
+}
+
+function renderBatteryPresets() {
+  const active = currentBatteryPreset();
+  return `<div class="option-grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${BATTERY_PRESETS.map(
+    (preset) => {
+      const kwh = ((preset.strings * preset.ah * 48) / 1000).toFixed(1);
+      const isActive =
+        st.power.batteryStrings === preset.strings && st.power.batteryAh === preset.ah;
+      return `<button class="option ${isActive ? "active" : ""}" data-action="battery-preset" data-value="${preset.strings}:${preset.ah}">${preset.label}<small>${preset.strings} ${preset.strings === 1 ? "string" : "strings"} × ${preset.ah} Ah · ${kwh} kWh</small></button>`;
+    }
+  ).join("")}</div>
+  <p class="card-note">${active ? `${active.label} bank selected` : `Custom bank: ${st.power.batteryStrings} × ${st.power.batteryAh} Ah`} · ${calculatePower().autonomy.toFixed(1)} h autonomy at ${calculatePower().dcLoad.toFixed(1)} kW. Every string is four 12V blocks in series.</p>`;
+}
+
+// Plain-English guide for whichever power component is selected; it moved
+// into the Fine-tune card so the step itself stays short.
+function renderPowerExplainer() {
+  const selected = registry.get(st.selectedId);
+  const key = selected && selected.data.powerKey;
+  const content = POWER_CONTENT[key] || POWER_CONTENT["power-system"];
+  return `<article class="power-hero" style="margin-top:10px"><div class="power-hero-head"><div class="power-hero-icon">P2</div><div><div class="eyebrow">Plain-English component guide</div><h3>${content.title}</h3><p>${selected ? selected.data.title : "Complete site power and climate system"}</p></div></div><div class="plain-grid"><div class="plain-card"><small>01 · WHAT IS IT?</small><p>${content.what}</p></div><div class="plain-card"><small>02 · WHAT DOES IT DO?</small><p>${content.does}</p></div><div class="plain-card"><small>03 · WHY DOES THE TOWER NEED IT?</small><p>${content.why}</p></div></div></article>`;
+}
+
+function renderPowerCards() {
+  const calc = calculatePower();
+  const preset = currentBatteryPreset();
+  const set = stepDone(3);
+  const cards = [
+    {
+      id: "source",
+      title: "Power source",
+      done: cardDone(3, "source", set),
+      summary: sourceLabel(),
+      body: `${sourceModeControls()}<p class="card-note">The ATS keeps exactly one source closed at a time and starts the standby set itself when the mains drops.</p>`,
+    },
+    {
+      id: "battery",
+      title: "Backup battery",
+      done: cardDone(3, "battery", set),
+      summary: `${preset ? preset.label : "Custom"} · ${st.power.batteryStrings} × ${st.power.batteryAh} Ah · ${calc.autonomy.toFixed(1)} h`,
+      body: renderBatteryPresets(),
+    },
+    {
+      id: "test",
+      title: "Test it",
+      done: cardDone(3, "test", set),
+      summary:
+        powerSim.phase === "NORMAL" ? "Run a blackout and restore the grid" : "Power event running",
+      body: `${renderPowerActions()}<p class="card-note">Drop the mains, watch the ATS bring the generator in and the batteries bridge the gap, then restore the grid. Fuel, battery current and alarms appear on the status strip while the event runs.</p>`,
+    },
+  ];
+  return renderCardList(3, cards, {
+    fineTune: `${renderPowerFlow()}${renderPowerNavigator()}${renderPowerControls()}${renderPowerExplainer()}
+      <div class="section-label">Reference numbers</div>${renderPowerLiveGrid()}${renderPowerAlarms()}
+      <p class="power-note">Live configuration: ${calc.installed} rectifier modules (${calc.required} required + ${Math.max(0, calc.installed - calc.required)} redundant) · ${st.power.batteryStrings} × ${st.power.batteryAh}Ah strings · estimated DC autonomy ${calc.autonomy.toFixed(1)} h at ${calc.dcLoad.toFixed(1)} kW.</p>`,
+    note: recommendRow(3, "Use recommended", "apply-recommended"),
+    footer: renderStepContinue(3),
+  });
 }
 
 function renderPowerPanel() {
   return (
-    renderPowerOverview() +
-    panelSection("Live numbers", renderPowerLiveGrid(), "SIMULATED") +
-    panelSection("Configure", renderPowerControls()) +
-    panelSection("Alarms", renderPowerAlarms()) +
+    panelSection("Configure", renderPowerCards()) +
     panelSection("Specs and details", renderPowerSpecs(), "PRELIMINARY", { advanced: true })
   );
 }
 
 function renderPhase6Panel() {
   return (
-    renderPhase6Overview() +
-    panelSection("Configure", renderPhase6Configure(), "COMMANDS & LAUNCH") +
+    panelSection("Configure", renderPhase6Cards(), "COMMANDS & LAUNCH") +
     panelSection("Specs and details", renderPhase6Specs(), "", { advanced: true })
   );
 }
 
 // Step 01 default view: one scroll, four sections, no duplicates.
+// Step 01 in one scroll: the inspector (when something is selected), three
+// decisions, one protection line, one fine-tune card, Continue, and the deep
+// detail folded away.
 function renderSitePanel() {
+  const onboarding = st.onboarding.active && st.masterStep === 1 && !st.selectedId;
   return (
+    (onboarding ? onboardingBanner() : "") +
     renderInspector() +
-    renderSiteControls() +
-    panelSection("Live numbers", renderSiteMetrics(), "UPDATES WITH HEIGHT") +
+    renderSiteCards() +
     panelSection("What is this?", renderSiteExplainer()) +
-    panelSection("Specs and details", renderSiteDetails(), "PRELIMINARY", { advanced: true })
+    panelSection("Specs and details", renderSiteMetrics() + renderSiteDetails(), "PRELIMINARY", {
+      advanced: true,
+    })
   );
 }
 
@@ -9121,52 +10412,6 @@ function renderSiteDetails() {
   return `<div class="section-label">Live site definition <span class="tag">JAVASCRIPT</span></div>
     <div class="code-card"><div class="code-head"><span>site.phase01.config.js</span><button data-action="copy-code">COPY CODE</button></div><pre id="code-snippet"><code>${highlightedCode()}</code></pre></div>
     ${renderSpecs()}`;
-}
-
-function renderSiteControls() {
-  const env = ENVIRONMENTS[st.env];
-  const tower = TOWERS[st.tower];
-  const [min, max] = tower.range;
-  const progress = ((st.H - min) / (max - min)) * 100;
-  const controls = `<div class="section-label">01 · Environment</div>
-    <div class="option-grid">${Object.entries(ENVIRONMENTS)
-      .map(
-        ([key, item]) =>
-          `<button class="option ${st.env === key ? "active" : ""}" data-action="environment" data-value="${key}" aria-pressed="${st.env === key}">${item.name}<small>${item.wind} km/h · ${item.allowed.length} allowed ${item.allowed.length === 1 ? "type" : "types"}</small></button>`
-      )
-      .join("")}</div>
-    <div class="section-label">02 · Tower type <span class="tag">FILTERED BY CIVIL RULES</span></div>
-    <div class="tower-grid">${Object.entries(TOWERS)
-      .map(([key, item]) => {
-        const allowed = env.allowed.includes(key);
-        const reason = allowed
-          ? `${item.range[0]}–${item.range[1]} m · ${item.detail}`
-          : towerDisallowedReason(st.env, key);
-        return `<button class="option ${st.tower === key ? "active" : ""}" data-action="tower" data-value="${key}" aria-pressed="${st.tower === key}" ${allowed ? "" : `disabled title="${escapeHTML(reason)}"`}>${item.name}<small>${escapeHTML(reason)}</small></button>`;
-      })
-      .join("")}</div>
-    ${renderHiddenTowerLine(env)}
-    <div class="section-label">03 · Parametric height</div>
-    <div class="control-card">
-      <div class="control-row"><label for="tower-height">Tower height</label><output class="control-value" id="height-value" for="tower-height">${st.H} m</output></div>
-      <input type="range" id="tower-height" min="${min}" max="${max}" step="1" value="${st.H}" style="--range-progress:${progress}%" aria-valuetext="${st.H} meters">
-      <div class="range-limits"><span>MIN ${min} m</span><span>STRUCTURAL LIMIT ${max} m</span></div>
-      <p class="control-note">Geometry, foundation reactions, wind area and torsional checks update with height. COW is limited to 25 m by its rapid-deployment rating.</p>
-    </div>
-    <div class="section-label">04 · Lightning protection</div>
-    <div class="option-grid" style="grid-template-columns:1fr 1fr">
-      <button class="option rod-option ${st.lightning === "FRANKLIN" ? "active" : ""}" data-action="lightning" data-value="FRANKLIN" ${env.mandatoryESE ? 'disabled title="Active ESE is mandatory in the 160 km/h exposed mountain zone."' : ""}>Passive Franklin Rod<small>${env.mandatoryESE ? "Not permitted on mountain peak" : "Copper spike · 45° protective cone"}</small></button>
-      <button class="option rod-option ${st.lightning === "ESE_ACTIVE" ? "active" : ""}" data-action="lightning" data-value="ESE_ACTIVE">Active ESE Terminal<small>AMPER · 50 m safety umbrella${env.mandatoryESE ? " · MANDATORY" : ""}</small></button>
-    </div>
-    <div class="section-label">05 · Fence &amp; grounding</div>
-    <label class="switch-card ${env.mandatoryGrounding ? "disabled" : ""}" ${env.mandatoryGrounding ? 'title="Cadweld earth pits and 70 mm² bonding are mandatory on mountain peaks."' : ""}>
-      <input type="checkbox" id="grounding-toggle" ${st.grounding ? "checked" : ""} ${env.mandatoryGrounding ? "disabled" : ""}>
-      <span class="switch-track"></span>
-      <span class="switch-copy"><strong>70 mm² fence bonding + Cadweld earth pits</strong><small>Bond posts every 10 m, bridge the gate hinge and connect the lightning down conductor.</small></span>
-      ${env.mandatoryGrounding ? '<span class="lock">LOCKED · REQUIRED</span>' : ""}
-    </label>
-    <p class="control-note">Power, backup and climate have their own step: continue to <strong>Step 03 · Power</strong> once the structure is defined.</p>`;
-  return controls;
 }
 
 // Names the towers the chosen environment rules out, in plain language.
@@ -9232,8 +10477,15 @@ function renderSpecs() {
 }
 
 function renderDrawer() {
+  // Held slider: hold the re-render too, or the drag dies under the pointer.
+  if (rangeDrag) {
+    rangeDrag.pending = true;
+    return;
+  }
   const drawer = $("#drawer");
   drawer.classList.toggle("collapsed", !st.drawerOpen);
+  const panelTab = $("#panel-tab");
+  if (panelTab) panelTab.hidden = st.drawerOpen || !isSidePanelViewport();
   drawer.classList.toggle("terminal-mode", st.masterStep === 5 && st.terminal.open);
   $("#terminal-toggle").setAttribute(
     "aria-pressed",
@@ -9256,6 +10508,8 @@ function renderDrawer() {
     5: "Go on air",
   };
   $(".step-number").textContent = String(st.masterStep).padStart(2, "0");
+  // Phones hide the step subtitle unless a 3D object is being inspected.
+  drawer.classList.toggle("has-selection", Boolean(st.selectedId));
   $(".drawer-title h2").textContent = titles[st.masterStep] || titles[1];
   $("#drawer-subtitle").textContent = selected
     ? `Inspecting · ${selected.data.title}`
@@ -9294,12 +10548,12 @@ function renderDrawer() {
   const content = $("#drawer-content");
   const scrollTop = content.scrollTop;
   const activeId = document.activeElement ? document.activeElement.id : "";
+  // The six gates live in the step header so they are visible at every snap
+  // state, and they can never be squeezed into a sliver.
+  const gates = $("#drawer-gates");
+  if (gates) gates.innerHTML = st.masterStep >= 2 && !st.onboarding.active ? gateStrip() : "";
   content.innerHTML =
-    renderRestoreNotice() +
-    renderLockedNotice() +
-    renderProfileConfirmCard() +
-    (st.masterStep >= 2 && !st.onboarding.active ? gateStrip() : "") +
-    renderStepPanel();
+    renderRestoreNotice() + renderLockedNotice() + renderProfileConfirmCard() + renderStepPanel();
   // Touch devices have no hover, so every disabled control repeats its title
   // as visible text next to the control (audit 9.1 #14).
   content.querySelectorAll("button[disabled][title]").forEach((element) => {
@@ -9343,24 +10597,175 @@ function renderProfileConfirmCard() {
   </div>`;
 }
 
-function syncHUDScroll() {
-  const hud = $("#site-hud");
-  const shell = $("#site-hud-shell");
-  const leftBtn = $("#hud-scroll-left");
-  const rightBtn = $("#hud-scroll-right");
-  if (!hud || !shell || !leftBtn || !rightBtn) return;
-  const maxScroll = Math.max(0, hud.scrollWidth - hud.clientWidth);
-  const scrollable = maxScroll > 2;
-  const canLeft = scrollable && hud.scrollLeft > 2;
-  const canRight = scrollable && hud.scrollLeft < maxScroll - 2;
-  hud.classList.toggle("is-scrollable", scrollable);
-  shell.classList.toggle("is-scrollable", scrollable);
-  leftBtn.hidden = !canLeft;
-  rightBtn.hidden = !canRight;
-  leftBtn.disabled = !canLeft;
-  rightBtn.disabled = !canRight;
-  shell.classList.toggle("can-scroll-left", canLeft);
-  shell.classList.toggle("can-scroll-right", canRight);
+// The live numbers are one catalogue now; the strip shows the few that matter
+// for the step in hand and the "All numbers" panel shows every one of them.
+// Nothing scrolls sideways and there are no chevrons any more.
+function hudCatalog() {
+  const power = calculatePower();
+  const civil = calculateEngineering();
+  const microwave = calculateMicrowave();
+  const rack = calculateRack();
+  const alarms = powerAlarms();
+  const sector = st.cellular.sectors[st.cellular.sector];
+  const sweep = st.cellular.sweeps[st.cellular.sector];
+  const audit = calculateAcceptance();
+  const passed = audit.checks.filter((check) => check.pass).length;
+  return {
+    status: {
+      id: "hud-site-status",
+      label: "Site status",
+      strip: "Status",
+      value: launch.onAir
+        ? "[ On air ]"
+        : st.onboarding.active
+          ? "[ Setting up ]"
+          : "[ Live model ]",
+      cellClass: launch.onAir ? "hud-on-air" : "",
+      short: launch.onAir ? "On air" : st.onboarding.active ? "Setting up" : "Live model",
+    },
+    env: { label: "Environment", strip: "Environment", value: ENVIRONMENTS[st.env].name },
+    structure: {
+      label: "Structure",
+      strip: "Structure",
+      value: `${TOWERS[st.tower].short} · ${st.H} m`,
+    },
+    civil: {
+      label: "Civil check",
+      strip: "Civil",
+      value: `Twist ${civil.twist.toFixed(2)}° ${civil.twistPass ? "PASS" : "FAIL"}`,
+      short: civil.twistPass ? "Civil pass" : "Civil fail",
+      valueClass: civil.twistPass ? "green" : "red",
+    },
+    earth: {
+      label: "Earth resistance",
+      strip: "Earth",
+      value: Number.isFinite(civil.resistance) ? `${civil.resistance.toFixed(1)} Ω` : "OPEN",
+      short: Number.isFinite(civil.resistance)
+        ? `${civil.resistance.toFixed(1)} Ω earth`
+        : "Earth open",
+      valueClass: civil.resistancePass ? "green" : "red",
+    },
+    load: { label: "Total load", strip: "Load", value: `${power.totalLoad.toFixed(2)} kW` },
+    backup: { label: "Backup hours", strip: "Backup", value: `${power.autonomy.toFixed(1)} h` },
+    backhaul: {
+      label: "Backhaul speed",
+      strip: "Backhaul",
+      value: formatCapacity(microwave.capacityMbps),
+    },
+    cabinet: {
+      label: "Cabinet",
+      strip: "Cabinet",
+      value: `${st.rack.vendor} ${cellularGeneration().label}`,
+    },
+    cabinetLoad: {
+      label: "Cabinet DC load",
+      strip: "DC load",
+      value: `${rack.loadKw.toFixed(2)} kW`,
+    },
+    services: {
+      label: "Live services",
+      strip: "Services",
+      value: `${rack.opticalPorts ? "5G/4G" : "no BB"} · ${rack.e1Lines} E1`,
+    },
+    cellular: {
+      label: `Cellular ${cellularGeneration().label}`,
+      strip: "Cellular",
+      value: cellularGeneration().throughput,
+      live: "rf-hud-throughput",
+    },
+    rsl: {
+      label: "Microwave RSL",
+      strip: "RSL",
+      value: `${microwave.rsl.toFixed(1)} dBm`,
+      valueClass: microwave.locked ? "green" : "amber",
+    },
+    fade: { label: "Fade margin", strip: "Fade", value: `${microwave.fadeMargin.toFixed(1)} dB` },
+    link: {
+      label: "Link status",
+      strip: "Link",
+      value: microwave.locked ? "LOCKED" : "SEEKING",
+      valueClass: microwave.locked ? "green" : "amber",
+    },
+    sector: {
+      label: "Sector status",
+      strip: "Sector",
+      value: `S${st.cellular.sector + 1} ${sector.onAir ? "ON AIR" : "MUTED"}`,
+      valueClass: sector.onAir ? "green" : "red",
+    },
+    vswr: {
+      label: "Last sweep VSWR",
+      strip: "Sweep VSWR",
+      value: sweep ? sweep.max.toFixed(2) : "not run",
+      valueClass: sweep ? (sweep.pass ? "green" : "red") : "",
+    },
+    throughput: {
+      label: "Throughput",
+      strip: "Throughput",
+      value: cellularGeneration().throughput,
+    },
+    source: { label: "AC source", strip: "AC source", value: sourceLabel() },
+    n1: {
+      label: "Rectifier N+1",
+      strip: "N+1",
+      value: `${power.n1Pass ? "PASS" : "WARN"} · ${power.installed}/${power.required + 1}`,
+      valueClass: power.n1Pass ? "green" : "red",
+    },
+    gates: {
+      label: "Gates passed",
+      strip: "Gates",
+      value: `${passed}/6`,
+      valueClass: audit.pass ? "green" : "",
+    },
+    alarms: {
+      label: "Active alarms",
+      strip: "Alarms",
+      value: alarms.length ? String(alarms.length) : "None",
+      valueClass: alarms.length ? "red" : "green",
+    },
+    fuel: { label: "Fuel consumption", value: `${power.fuelRate.toFixed(2)} L/h` },
+    battery: { label: "Battery discharge", value: `${power.batteryCurrent.toFixed(1)} A` },
+  };
+}
+
+// The strip only ever shows the cells that matter for the step in hand (max 5).
+const HUD_STEP_KEYS = {
+  1: ["env", "structure", "civil", "earth"],
+  2: ["cabinet", "cabinetLoad", "backhaul", "services"],
+  3: ["source", "load", "backup", "n1"],
+  4: ["rsl", "fade", "backhaul", "link"],
+  "4b": ["cellular", "sector", "vswr", "throughput"],
+  5: ["gates", "status", "alarms"],
+};
+const HUD_PANEL_ORDER = [
+  "status",
+  "env",
+  "structure",
+  "civil",
+  "earth",
+  "cabinet",
+  "cabinetLoad",
+  "services",
+  "source",
+  "load",
+  "backup",
+  "n1",
+  "rsl",
+  "fade",
+  "backhaul",
+  "link",
+  "cellular",
+  "sector",
+  "vswr",
+  "throughput",
+  "gates",
+  "alarms",
+  "fuel",
+  "battery",
+];
+
+function hudStepKey() {
+  if (st.masterStep === 4 && st.microwave.system === "CELLULAR") return "4b";
+  return st.masterStep;
 }
 
 function updateHUD() {
@@ -9383,99 +10788,75 @@ function updateHUD() {
     }
   }
   const hud = $("#site-hud");
-  const scroll = hud.scrollLeft;
+  const panelGrid = $("#hud-panel-grid");
   const livePill = $("#live-pill");
-  if (st.onboarding.active && !launch.onAir && !aiBuild.running) {
-    hud.classList.add("is-setup");
-    renderHUDCells(hud, "setup", [
-      { key: "status", label: "Site Status", value: "[ Setting up ]", cellClass: "hud-setup" },
-      { key: "env", label: "Environment", value: ENVIRONMENTS[st.env].name },
-      {
-        key: "structure",
-        label: "Structure",
-        value: st.onboarding.towerSelected
-          ? `${TOWERS[st.tower].short} · ${st.H} m`
-          : "Choose tower below",
-      },
-      {
-        key: "hint",
-        label: "Guided Setup",
-        value: "Pick tower & height in Step 01 to unlock full live telemetry",
-        cellClass: "hud-setup-hint",
-      },
-    ]);
-    hud.scrollLeft = 0;
-    livePill.classList.remove("on-air");
-    livePill.classList.add("setup");
-    setLivePillText(livePill, "SETTING UP");
-    syncHUDScroll();
-    return;
-  }
-  hud.classList.remove("is-setup");
-  const calc = calculatePower();
-  const microwave = calculateMicrowave();
-  const alarms = powerAlarms();
-  const eventActive = powerSim.phase !== "NORMAL" || alarms.length > 0;
-  const cells = [
+  const shell = $("#site-hud-shell");
+  const chipTitle = $("#hud-chip-title");
+  const chipText = $("#hud-chip-text");
+  if (!hud) return;
+  const catalog = hudCatalog();
+  const setup = st.onboarding.active && !launch.onAir && !aiBuild.running;
+
+  // Setup keeps the calm, three-cell vocabulary the first-run flow uses.
+  const setupCells = [
+    { ...catalog.status, cellClass: "hud-setup" },
+    catalog.env,
     {
-      key: "status",
-      id: "hud-site-status",
-      label: "Site status",
-      value: launch.onAir
-        ? `[ On air ] • ${calc.totalLoad.toFixed(2)} kW • ${calc.autonomy.toFixed(1)} h • ${cellularThroughputGbps()} Gbps`
-        : "[ Live model ]",
-      cellClass: launch.onAir ? "hud-on-air" : "",
+      key: "structure",
+      label: "Structure",
+      value: st.onboarding.towerSelected ? `${TOWERS[st.tower].short} · ${st.H} m` : "Choose tower",
     },
-    { key: "env", label: "Environment", value: ENVIRONMENTS[st.env].name },
-    { key: "structure", label: "Structure", value: `${TOWERS[st.tower].short} · ${st.H} m` },
-    { key: "load", label: "Total load", value: `${calc.totalLoad.toFixed(2)} kW` },
-    { key: "backup", label: "Backup hours", value: `${calc.autonomy.toFixed(1)} h` },
-    { key: "backhaul", label: "Backhaul speed", value: formatCapacity(microwave.capacityMbps) },
-    {
-      key: "cellular",
-      label: `Cellular ${cellularGeneration().label}`,
-      value: cellularGeneration().throughput,
-      live: "rf-hud-throughput",
-    },
-    {
-      key: "rsl",
-      label: "Microwave RSL",
-      value: `${microwave.rsl.toFixed(1)} dBm`,
-      valueClass: microwave.locked ? "green" : "amber",
-    },
-    { key: "fade", label: "Fade margin", value: `${microwave.fadeMargin.toFixed(1)} dB` },
-    {
-      key: "n1",
-      label: "Rectifier N+1",
-      value: `${calc.n1Pass ? "PASS" : "WARN"} · ${calc.installed} INST / ${calc.required + 1} REQ`,
-      valueClass: calc.n1Pass ? "green" : "red",
-    },
-    { key: "source", label: "AC source", value: sourceLabel() },
   ];
-  if (eventActive) {
-    cells.push({
-      key: "fuel",
-      label: "Fuel consumption",
-      value: `${calc.fuelRate.toFixed(2)} L/h`,
-    });
-    cells.push({
-      key: "battery",
-      label: "Battery discharge",
-      value: `${calc.batteryCurrent.toFixed(1)} A`,
-    });
-    cells.push({
-      key: "alarms",
-      label: `Active alarms · ${alarms.length}`,
-      value: alarms.length ? alarms[0].label : "None",
-      valueClass: alarms.length ? "red" : "green",
-    });
+  const stepKeys = setup ? null : HUD_STEP_KEYS[hudStepKey()] || HUD_STEP_KEYS[1];
+  const stripCells = setup
+    ? setupCells
+    : stepKeys
+        .map((key) => ({ key, ...catalog[key] }))
+        .filter((cell) => cell.value !== undefined)
+        // The strip is one row of narrow cells, so it uses the short label the
+        // panel does not need: "DC load", never "Cabinet DC load" cut to
+        // "Cabinet DC…".
+        .map((cell) => ({ ...cell, label: cell.strip || cell.label }));
+  // The panel repeats the strip's numbers, so it never carries the strip's ids.
+  const allCells = setup
+    ? setupCells.map(({ id: _id, ...cell }) => cell)
+    : HUD_PANEL_ORDER.map((key) => ({ key, ...catalog[key] }))
+        .filter((cell) => cell.value !== undefined)
+        .map(({ id: _id, ...cell }) => cell);
+
+  hud.classList.toggle("is-setup", setup);
+  renderHUDCells(hud, `${setup ? "setup" : "step" + hudStepKey()}`, stripCells);
+  if (panelGrid) renderHUDCells(panelGrid, `${setup ? "setup" : "all"}`, allCells);
+
+  const title = launch.onAir ? "ON AIR" : setup ? "SETTING UP" : "LIVE MODEL";
+  if (chipTitle) chipTitle.textContent = title;
+  if (chipText)
+    chipText.textContent = stripCells
+      .slice(0, 3)
+      .map((cell) => cell.short || cell.value)
+      .join(" · ");
+  if (shell) {
+    shell.classList.toggle("is-setup", setup);
+    shell.classList.toggle("is-on-air", launch.onAir);
   }
-  renderHUDCells(hud, "live", cells);
-  hud.scrollLeft = scroll;
-  livePill.classList.remove("setup");
-  livePill.classList.toggle("on-air", launch.onAir);
-  setLivePillText(livePill, launch.onAir ? "ON AIR" : "LIVE MODEL");
+  if (hud) hud.classList.toggle("is-on-air", launch.onAir);
+  if (livePill) {
+    livePill.classList.remove("setup");
+    livePill.classList.toggle("on-air", launch.onAir);
+    setLivePillText(livePill, launch.onAir ? "ON AIR" : setup ? "SETTING UP" : "LIVE MODEL");
+  }
   syncHUDScroll();
+}
+
+// Kept for the public API and for the resize path: the strip no longer
+// scrolls, so this only makes sure the old scroll affordances stay off.
+function syncHUDScroll() {
+  const hud = $("#site-hud");
+  const shell = $("#site-hud-shell");
+  if (!hud || !shell) return;
+  hud.classList.remove("is-scrollable", "is-dragging");
+  shell.classList.remove("is-scrollable", "can-scroll-left", "can-scroll-right");
+  hud.scrollLeft = 0;
 }
 
 const HUD_STATE = new WeakMap();
@@ -9989,6 +11370,70 @@ function updatePowerSimulation(now, dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Hero artwork geometry
+// ---------------------------------------------------------------------------
+// The hero picture is full-bleed: its box keeps the artwork's own aspect ratio
+// and is sized to cover the stage, so there is never a letterbox. These are the
+// same numbers the stylesheet uses (--hero-aspect / --hero-bleed /
+// --hero-focus-x), written down once so the layout can be tested without a
+// browser.
+const HERO_ASPECT = 1.791045; // herotower-*.webp is 1200 x 670
+const HERO_BLEED = 1.08; // headroom for the pointer parallax and the tilt
+
+// The two things a phone must always show: the lattice tower (x = 62.8% of the
+// picture) and the equipment shelter that houses the RBS (x = 49.5%). Their
+// midpoint is 56%; the crop is centred just right of it so the tower keeps a
+// little air and the shelter stays clear of the left edge.
+function heroFocus(width = window.innerWidth, height = window.innerHeight) {
+  if (height < width) return { x: 0.5, y: 0.5 }; // landscape: centred
+  return { x: width <= 767 ? 0.58 : 0.56, y: 0.5 };
+}
+
+// Writes the measured geometry onto the artwork element. CSS alone cannot be
+// trusted here: a silently dropped max()/calc() chain is a letterbox, and that
+// is exactly what used to happen.
+function applyHeroLayout() {
+  const art = $("#hero-artwork");
+  if (!art) return null;
+  const layout = heroLayout();
+  art.style.setProperty("--hero-w", `${layout.boxWidth.toFixed(1)}px`);
+  art.style.setProperty("--hero-h", `${layout.boxHeight.toFixed(1)}px`);
+  art.style.setProperty("--hero-x", `${layout.left.toFixed(1)}px`);
+  art.style.setProperty("--hero-y", `${layout.top.toFixed(1)}px`);
+  return layout;
+}
+
+// Where the artwork box sits, and which part of the picture survives the crop,
+// in picture fractions (0-1) for one viewport.
+function heroLayout(width = window.innerWidth, height = window.innerHeight) {
+  const focus = heroFocus(width, height);
+  const boxWidth = Math.max(width * HERO_BLEED, height * HERO_ASPECT * HERO_BLEED);
+  const boxHeight = Math.max(height * HERO_BLEED, (width / HERO_ASPECT) * HERO_BLEED);
+  const left = focus.x * width - focus.x * boxWidth;
+  const top = focus.y * height - focus.y * boxHeight;
+  return {
+    width,
+    height,
+    focus,
+    boxWidth,
+    boxHeight,
+    left,
+    top,
+    // The visible slice of the picture, as fractions of the picture.
+    visible: {
+      x0: (0 - left) / boxWidth,
+      x1: (width - left) / boxWidth,
+      y0: (0 - top) / boxHeight,
+      y1: (height - top) / boxHeight,
+    },
+    // How far the picture may slide before an edge would show.
+    slackX: (boxWidth - width) / 2,
+    slackY: (boxHeight - height) / 2,
+    covers: boxWidth >= width - 0.5 && boxHeight >= height - 0.5,
+  };
+}
+
 const heroMotion = {
   targetX: 0,
   targetY: 0,
@@ -10035,8 +11480,13 @@ function updateHeroPointer(clientX, clientY, immediate = false) {
   const nx = clamp((clientX / w - 0.5) * 2, -1, 1);
   const ny = clamp((clientY / h - 0.5) * 2, -1, 1);
   const mobile = w <= 760;
-  const shiftX = mobile ? 26 : heroMotion.maxShiftX;
-  const shiftY = mobile ? 0 : heroMotion.maxShiftY;
+  // The picture has --hero-bleed of slack; the shift is clamped to a third of
+  // it so the edge of the photograph can never slide into view.
+  const layout = heroLayout(w, h);
+  const limitX = Math.min(heroMotion.maxShiftX, layout.slackX);
+  const limitY = Math.min(heroMotion.maxShiftY, layout.slackY);
+  const shiftX = mobile ? Math.min(26, limitX) : limitX;
+  const shiftY = mobile ? 0 : limitY;
   // Inverse 3D motion: mouse right -> image moves left; mouse up -> image moves down.
   heroMotion.targetX = -nx * shiftX;
   heroMotion.targetY = -ny * shiftY;
@@ -10070,7 +11520,10 @@ function updateHeroMotion(dt = 0.016) {
 }
 
 function setHeroOpen(open) {
+  const wasOpen = st.heroOpen;
   st.heroOpen = Boolean(open);
+  if (st.heroOpen !== wasOpen) playSound(st.heroOpen ? "whoosh" : "tick");
+  applyHeroLayout();
   document.body.classList.toggle("hero-active", st.heroOpen);
   const hero = $("#hero-tab");
   if (hero) {
@@ -10198,12 +11651,11 @@ function initHeroTab() {
   let touchStartX = 0;
   let touchBaseX = 0;
 
+  // The picture already covers the stage, so the touch pan only gets the bleed
+  // margin to move in — drag it further and a bare edge would appear.
   const mobilePanBounds = () => {
-    const artW = 0.82 * Math.max(1, window.innerHeight) * 1.790822;
-    const halfView = Math.max(1, window.innerWidth) / 2;
-    const minX = -Math.max(0, 0.435 * artW - halfView);
-    const maxX = Math.max(0, 0.565 * artW - halfView);
-    return [minX, maxX];
+    const slack = heroLayout().slackX;
+    return [-slack, slack];
   };
 
   hero.addEventListener("pointerdown", (event) => {
@@ -10239,10 +11691,46 @@ function initHeroTab() {
     resetHeroPointer(false);
   });
 
+  // A pin close to an edge (which a portrait phone crop produces) would push
+  // its callout off-screen. Measure the open callout once and shift it back.
+  const nudgeHeroNote = (spot) => {
+    const note = spot.querySelector(".hero-note");
+    if (!note) return;
+    note.style.setProperty("--note-nudge", "0px");
+    const rect = note.getBoundingClientRect();
+    if (!rect.width) return;
+    const pad = 8;
+    let dx = 0;
+    if (rect.left < pad) dx = pad - rect.left;
+    else if (rect.right > window.innerWidth - pad) dx = window.innerWidth - pad - rect.right;
+    if (dx) note.style.setProperty("--note-nudge", `${Math.round(dx)}px`);
+  };
+
+  // A hotspot whose component the crop has carried off-screen is hidden rather
+  // than left half-clipped at the edge of the picture.
+  const syncHeroHotspots = () => {
+    const art = $("#hero-artwork");
+    if (!art) return;
+    const box = art.getBoundingClientRect();
+    if (!box.width) return; // No layout engine (tests): nothing to measure.
+    hero.querySelectorAll(".hero-hotspot").forEach((spot) => {
+      const pin = spot.querySelector(".hero-pin");
+      if (!pin) return;
+      const rect = pin.getBoundingClientRect();
+      const centre = rect.left + rect.width / 2;
+      const pad = rect.width / 2 + 4;
+      const visible = centre >= pad && centre <= window.innerWidth - pad;
+      spot.classList.toggle("is-offstage", !visible);
+    });
+  };
+  syncHeroHotspots();
+  window.addEventListener("resize", syncHeroHotspots);
+
   hero.querySelectorAll(".hero-hotspot").forEach((spot) => {
     const key = spot.dataset.hotspot || null;
     spot.addEventListener("pointerenter", () => {
       heroMotion.activeHotspot = key;
+      nudgeHeroNote(spot);
     });
     spot.addEventListener("pointerleave", () => {
       if (heroMotion.activeHotspot === key && !spot.classList.contains("is-open")) {
@@ -10251,6 +11739,7 @@ function initHeroTab() {
     });
     spot.addEventListener("focus", () => {
       heroMotion.activeHotspot = key;
+      nudgeHeroNote(spot);
     });
     spot.addEventListener("blur", () => {
       if (heroMotion.activeHotspot === key) heroMotion.activeHotspot = null;
@@ -10263,6 +11752,7 @@ function initHeroTab() {
         .forEach((other) => other.classList.remove("is-open"));
       spot.classList.toggle("is-open", willOpen);
       heroMotion.activeHotspot = willOpen ? key : null;
+      if (willOpen) nudgeHeroNote(spot);
     });
   });
 
@@ -10354,13 +11844,32 @@ const GATE_TERMS = {
   alarms: "ALARM HIGHWAY",
 };
 
+// Compact gate row: six labelled dots, one row, always 44px tall so it can
+// never collapse to a sliver. A failing gate jumps to the step that fixes it.
+const GATE_SHORT = {
+  civil: "CIVIL",
+  earthing: "EARTH",
+  power: "POWER",
+  backhaul: "LINK",
+  rf: "RF",
+  alarms: "ALARMS",
+};
+const GATE_FIX_STEP = {
+  civil: 1,
+  earthing: 1,
+  power: 3,
+  backhaul: 4,
+  rf: 4,
+  alarms: 2,
+};
+
 function gateStrip() {
   const audit = calculateAcceptance();
   return `<div class="gate-strip" role="list" aria-label="Site readiness gates">${audit.checks
     .map((check) => {
-      const key = GATE_TERMS[check.id];
-      const label = key ? Term(key, check.title) : escapeHTML(check.title);
-      return `<div class="gate ${check.pass ? "pass" : "fail"}" role="listitem" title="${escapeHTML(check.explanation)}"><span class="gate-dot"></span><small>${label}</small><strong>${check.pass ? "PASS" : "OPEN"}</strong></div>`;
+      const short = GATE_SHORT[check.id] || check.title;
+      const definition = GLOSSARY[GATE_TERMS[check.id]] || "";
+      return `<button type="button" class="gate ${check.pass ? "pass" : "fail"}" role="listitem" data-action="gate-jump" data-value="${GATE_FIX_STEP[check.id] || 1}" data-gate="${check.id}" title="${escapeHTML(check.explanation)}" aria-label="${escapeHTML(check.title)}: ${check.pass ? "pass" : "open"}. ${escapeHTML(definition)}"><span class="gate-dot"></span><small>${escapeHTML(short)}</small><strong>${check.pass ? "PASS" : "OPEN"}</strong></button>`;
     })
     .join("")}</div>`;
 }
@@ -10375,6 +11884,7 @@ function enterMasterStep(step) {
     const content = $("#drawer-content");
     if (content) content.scrollTop = 0;
     toast(gate.reason.toUpperCase());
+    playSound("blocked");
     return false;
   }
   st.lockedNotice = null;
@@ -10384,6 +11894,10 @@ function enterMasterStep(step) {
   st.masterStep = step;
   st.drawerOpen = true;
   st.tab = "overview";
+  // A step opens on its first unfinished decision, and the sheet stops at the
+  // half state so the header and that first card are both visible.
+  resetCardState(step);
+  if (isSheetViewport()) st.sheet = "half";
   if (previousStep === 5 && step !== 5 && !launch.onAir) {
     st.selectedId = null;
     rebuildSite();
@@ -10418,6 +11932,7 @@ function enterMasterStep(step) {
     fitSite();
   }
   $("#drawer-content").scrollTop = 0;
+  playSound("step");
   return true;
 }
 
@@ -10437,11 +11952,52 @@ $("#drawer").addEventListener("click", (event) => {
   if (!button || button.disabled) return;
   const action = button.dataset.action;
   const value = button.dataset.value;
+  const cue = soundForAction(action);
+  if (cue) playSound(cue);
+  // Any real decision inside a card marks that card finished, so Guided level
+  // can fold it to a summary line with an Edit action.
+  const owningCard = button.closest(".decision-card[data-card]");
+  if (owningCard && !["card-toggle", "fine-toggle"].includes(action))
+    markCardDone(owningCard.dataset.card);
   if (MUTATING_ACTIONS.has(action) && !PROFILE_ACTIONS.has(action)) {
     // Triage options 1 and 3 only inspect or advise; 2 and 4 change the site.
     if (!(action === "triage-choice" && value !== "2" && value !== "4")) commitHistory(action);
   }
-  if (action === "go-on-air") {
+  if (action === "card-toggle") {
+    CARD_UI.open[st.masterStep] = CARD_UI.open[st.masterStep] === value ? null : value;
+    renderDrawer();
+  } else if (action === "fine-toggle") {
+    CARD_UI.fine[st.masterStep] = !CARD_UI.fine[st.masterStep];
+    renderDrawer();
+  } else if (action === "battery-preset") {
+    const [strings, ah] = String(value).split(":").map(Number);
+    st.power.batteryStrings = strings;
+    st.power.batteryAh = ah;
+    normalizePowerState();
+    startManualAssembly("BATTERY BANK");
+    rebuildSite();
+    renderDrawer();
+    updateHUD();
+    const preset = currentBatteryPreset();
+    toast(
+      preset
+        ? `BATTERY · ${preset.label.toUpperCase()} · ${preset.strings} × ${preset.ah} Ah`
+        : "BATTERY BANK UPDATED"
+    );
+  } else if (action === "apply-recommended") {
+    applyRecommended(st.masterStep);
+  } else if (action === "undo-recommended") {
+    undo();
+    delete RECOMMENDED.applied[Number(value)];
+    renderDrawer();
+    toast("RECOMMENDED SETTINGS REVERTED");
+  } else if (action === "gate-jump") {
+    const target = Number(value) || 1;
+    if (st.masterStep === target) {
+      const failing = calculateAcceptance().checks.find((check) => !check.pass);
+      if (failing) toast(failing.explanation.toUpperCase());
+    } else enterMasterStep(target);
+  } else if (action === "go-on-air") {
     goOnAir();
   } else if (action === "terminal-open") {
     st.terminal.open = true;
@@ -10622,15 +12178,7 @@ $("#drawer").addEventListener("click", (event) => {
         : "HEALTHY FEEDER SCENARIO RESTORED"
     );
   } else if (action === "rf-run-sweep") {
-    if (cellularSim.running) return;
-    cellularSim.running = true;
-    cellularSim.started = performance.now();
-    cellularSim.sector = st.cellular.sector;
-    cellularSim.lastProgress = -1;
-    st.cellular.sweeps[st.cellular.sector] = null;
-    st.cellular.aiDiagnostics[st.cellular.sector] = null;
-    renderDrawer();
-    toast(`SITE MASTER · SWEEPING SECTOR ${st.cellular.sector + 1}`);
+    startSectorSweep();
   } else if (action === "rf-ai-diagnostic") {
     const index = st.cellular.sector;
     const result = st.cellular.sweeps[index] || calculateSweep(index);
@@ -10761,6 +12309,21 @@ $("#drawer").addEventListener("keydown", (event) => {
   event.target.value = history[st.terminal.historyIndex] || "";
 });
 
+// Guided-level dropdowns deliver their value through the same action a button
+// would fire, so there is exactly one implementation of every site change.
+function triggerDrawerAction(action, value) {
+  const host = $("#drawer-content");
+  if (!host) return false;
+  const proxy = document.createElement("button");
+  proxy.type = "button";
+  proxy.hidden = true;
+  proxy.dataset.action = action;
+  proxy.dataset.value = value;
+  host.appendChild(proxy);
+  proxy.click();
+  return true;
+}
+
 // A slider drag or a group of checkbox ticks is one undoable action, so the
 // pre-change snapshot is taken when the control gains focus (before any value
 // changes) and committed once when the control settles (audit 9.6 #40).
@@ -10769,6 +12332,7 @@ $("#drawer").addEventListener("focusin", (event) => {
 });
 
 $("#drawer").addEventListener("input", (event) => {
+  if (event.target.matches && event.target.matches('input[type="range"]')) playSound("ratchet");
   beginHistoryTransaction();
   const rfInput = event.target.dataset.rfInput;
   if (rfInput) {
@@ -10890,7 +12454,56 @@ $("#drawer").addEventListener("input", (event) => {
   scheduleRebuild();
 });
 
+// --- sliders: hold to drag, wheel to nudge ---------------------------------
+const SLIDER_SELECTOR = 'input[type="range"]';
+
+$("#drawer").addEventListener("pointerdown", (event) => {
+  if (event.target.matches(SLIDER_SELECTOR)) beginRangeDrag();
+});
+$("#drawer").addEventListener("pointerup", endRangeDrag);
+$("#drawer").addEventListener("pointercancel", endRangeDrag);
+window.addEventListener("pointerup", endRangeDrag);
+window.addEventListener("pointercancel", endRangeDrag);
+
+// A wheel over a slider nudges it instead of scrolling the panel underneath:
+// the user asked for every slider to move under the pointer, and a precision
+// control is exactly where one notch of wheel beats a scroll.
+$("#drawer").addEventListener(
+  "wheel",
+  (event) => {
+    const slider = event.target.closest(SLIDER_SELECTOR);
+    if (!slider) return;
+    const min = Number(slider.min || 0);
+    const max = Number(slider.max || 100);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return;
+    const step = Number(slider.step) || (max - min) / 100;
+    const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
+    if (!delta) return;
+    event.preventDefault();
+    const next = clamp(Number(slider.value) - Math.sign(delta) * step, min, max);
+    if (next === Number(slider.value)) return;
+    slider.value = String(Number(next.toFixed(4)));
+    slider.dispatchEvent(new window.Event("input", { bubbles: true }));
+  },
+  { passive: false }
+);
+
 $("#drawer").addEventListener("change", (event) => {
+  const control = event.target;
+  if (control.matches && control.matches("select")) {
+    playSound(control.dataset.selectAction === "power-source-mode" ? "relay" : "select");
+  } else if (control.matches && control.matches('input[type="checkbox"]')) {
+    const powerChange = control.dataset.powerChange;
+    playSound(powerChange === "branch" || powerChange === "auto-rectifiers" ? "relay" : "toggle");
+  }
+  const selectAction = event.target.dataset.selectAction;
+  if (selectAction) {
+    const owningCard = event.target.closest(".decision-card[data-card]");
+    if (owningCard) markCardDone(owningCard.dataset.card);
+    beginHistoryTransaction();
+    triggerDrawerAction(selectAction, event.target.value);
+    return;
+  }
   const changeLabel =
     event.target.dataset.rfInput ||
     event.target.dataset.mwInput ||
@@ -11005,7 +12618,7 @@ $("#ai-plan-card").addEventListener("click", (event) => {
   else cancelAIBuild();
 });
 $("#ai-close-button").addEventListener("click", () => setAIArchitectOpen(false));
-$("#ai-mobile-toggle").addEventListener("click", () => setAIArchitectOpen(true));
+$("#ai-scrim").addEventListener("click", () => setAIArchitectOpen(false));
 document.querySelectorAll("[data-ai-scenario]").forEach((button) => {
   button.addEventListener("click", () => {
     const blueprint = AI_BLUEPRINTS[button.dataset.aiScenario];
@@ -11042,9 +12655,30 @@ $("#menu-panel").addEventListener("click", (event) => {
   const item = event.target.closest("[data-action]");
   if (!item) return;
   const action = item.dataset.action;
+  if (action === "menu-sound") {
+    // A switch, not a command: leave the menu open so the row can show its
+    // new state (and so toggling it twice is one gesture, not two).
+    toggleSound();
+    return;
+  }
   setMenuOpen(false);
+  // Items that open a surface get that surface's sound from the function that
+  // opens it; everything else is a menu click.
+  const menuCue = {
+    "menu-hero": null,
+    "menu-ai": null,
+    "menu-fit": null,
+    "menu-undo": null,
+    "menu-redo": null,
+    "menu-shortcuts": "tick",
+  };
+  const cue = action in menuCue ? menuCue[action] : "select";
+  if (cue) playSound(cue);
   if (action === "menu-undo") undo();
   else if (action === "menu-redo") redo();
+  else if (action === "menu-hero") setHeroOpen(!st.heroOpen);
+  else if (action === "menu-ai") setAIArchitectOpen(true);
+  else if (action === "menu-fit") fitSite();
   else if (action === "menu-save-file") saveSiteToFile();
   else if (action === "menu-open-file") openSiteFilePicker();
   else if (action === "menu-start-fresh") startFresh();
@@ -11059,6 +12693,46 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("#menu-panel") || event.target.closest("#menu-toggle")) return;
   setMenuOpen(false);
 });
+// --- all live numbers panel ------------------------------------------------
+function setHudPanelOpen(open) {
+  const panel = $("#hud-panel");
+  if (!panel) return;
+  panel.hidden = !open;
+  const chip = $("#hud-chip");
+  const more = $("#hud-more");
+  const pill = $("#live-pill");
+  [chip, more, pill].forEach((control) => {
+    if (control) control.setAttribute("aria-expanded", String(!!open));
+  });
+  if (open) updateHUD();
+}
+
+function toggleHudPanel() {
+  const panel = $("#hud-panel");
+  setHudPanelOpen(!panel || panel.hidden);
+}
+
+for (const id of ["#hud-chip", "#hud-more", "#live-pill"]) {
+  const control = $(id);
+  if (control) control.addEventListener("click", toggleHudPanel);
+}
+document.addEventListener("click", (event) => {
+  const panel = $("#hud-panel");
+  if (!panel || panel.hidden) return;
+  if (event.target.closest('[data-action="close-hud-panel"]')) {
+    setHudPanelOpen(false);
+    return;
+  }
+  if (
+    event.target.closest("#hud-panel") ||
+    event.target.closest("#hud-chip") ||
+    event.target.closest("#hud-more") ||
+    event.target.closest("#live-pill")
+  )
+    return;
+  setHudPanelOpen(false);
+});
+
 $("#undo-button").addEventListener("click", () => {
   undo();
   updateMenuState();
@@ -11127,9 +12801,23 @@ if (gestureHintButton) gestureHintButton.addEventListener("click", dismissGestur
 
 $("#terminal-toggle").addEventListener("click", toggleTerminal);
 $("#drawer-toggle").addEventListener("click", () => {
+  // On a phone the same control walks the three snap states; on a laptop it
+  // collapses the side panel to its 44px reopen tab.
+  if (isSheetViewport()) {
+    cycleSheet();
+    return;
+  }
   st.drawerOpen = !st.drawerOpen;
   renderDrawer();
+  requestAnimationFrame(measureChrome);
 });
+const panelTab = $("#panel-tab");
+if (panelTab)
+  panelTab.addEventListener("click", () => {
+    st.drawerOpen = true;
+    renderDrawer();
+    requestAnimationFrame(measureChrome);
+  });
 $("#master-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-step]");
   if (button) enterMasterStep(Number(button.dataset.step));
@@ -11150,6 +12838,7 @@ function snapCameraToGoal() {
 }
 
 function fitSite(immediate = false) {
+  if (!immediate) playSound("servo");
   const rooftop = st.env === "URBAN_ROOFTOP";
   const guyed = st.tower === "GUYED_MAST";
   const h = st.H;
@@ -11175,6 +12864,7 @@ function fitSite(immediate = false) {
 
 function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  applyHeroLayout();
   // The camera framing depends on the real drawer/sheet size, so re-measure
   // before anything reads it.
   measureChrome();
@@ -11337,6 +13027,23 @@ window.addEventListener("keydown", (event) => {
   const typing =
     active &&
     (["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) || active.isContentEditable);
+  // Escape always dismisses the AI dialog, even while the caret sits in its
+  // own input: a dialog that traps the keyboard is a dialog you cannot leave.
+  // M is the sound switch, and it stays out of the way inside a text field.
+  if (
+    !typing &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === "m"
+  ) {
+    toggleSound();
+    return;
+  }
+  if (event.key === "Escape" && st.ai.architectOpen) {
+    setAIArchitectOpen(false);
+    return;
+  }
   if (event.key === "Escape" && !typing) {
     if (activeTerm) {
       hideTerm();
@@ -11344,6 +13051,11 @@ window.addEventListener("keydown", (event) => {
     }
     closeMenuPanel();
     closeShortcutsModal();
+    const hudPanel = $("#hud-panel");
+    if (hudPanel && !hudPanel.hidden) {
+      setHudPanelOpen(false);
+      return;
+    }
     clearSelection();
     return;
   }
@@ -11513,6 +13225,15 @@ window.TowerStudio = {
   cameraCurrent,
   rebuild: rebuildSite,
   code: codeSnippet,
+  sound: {
+    play: playSound,
+    setEnabled: setSoundEnabled,
+    toggle: toggleSound,
+    enabled: () => SOUND_STATE.enabled,
+    available: () => typeof (window.AudioContext || window.webkitAudioContext) === "function",
+    names: () => Object.keys(SOUND_RECIPES),
+    volume: SOUND_STATE.volume,
+  },
 };
 window.TowerStudio.saveWorkspace = saveWorkspace;
 window.TowerStudio.readWorkspace = readWorkspace;
@@ -11547,6 +13268,18 @@ window.TowerStudio.isTouchPointer = isTouchPointer;
 window.TowerStudio.frustumShifts = frustumShifts;
 window.TowerStudio.measureChrome = measureChrome;
 window.TowerStudio.chromeMetrics = chromeMetrics;
+// The chrome arithmetic the pass-2 layout tests measure against.
+window.TowerStudio.chromeLayout = chromeLayout;
+window.TowerStudio.heroLayout = heroLayout;
+window.TowerStudio.applyHeroLayout = applyHeroLayout;
+window.TowerStudio.heroFocus = heroFocus;
+window.TowerStudio.HERO_ASPECT = HERO_ASPECT;
+window.TowerStudio.HERO_BLEED = HERO_BLEED;
+window.TowerStudio.chromeTokensFor = chromeTokensFor;
+window.TowerStudio.CHROME_TOKENS = CHROME_TOKENS;
+window.TowerStudio.CHROME = { overlaps, unionArea, rect, textWidth };
+window.TowerStudio.isSheetViewport = isSheetViewport;
+window.TowerStudio.isSidePanelViewport = isSidePanelViewport;
 window.TowerStudio.scheduleRebuild = scheduleRebuild;
 window.TowerStudio.REBUILD_THROTTLE_MS = REBUILD_THROTTLE_MS;
 window.TowerStudio.setSheet = setSheet;

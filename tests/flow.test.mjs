@@ -190,15 +190,21 @@ test("the towers an environment rules out are named, not silently hidden", () =>
   assert.match(line.textContent, /Hidden for/i);
   assert.match(line.textContent, /Urban rooftop/i);
 
-  // Every disallowed tower button explains itself in visible text.
-  const disabled = [...content.querySelectorAll('[data-action="tower"][disabled]')];
-  assert.ok(disabled.length > 0);
+  // Guided level offers only the towers the environment allows, so the line
+  // above is the whole story. Engineer level keeps every tower, and each
+  // disallowed one explains itself in visible text.
+  studio.setDetailLevel("ENGINEER");
+  studio.renderDrawer();
+  const engineerContent = document.querySelector("#drawer-content");
+  const disabled = [...engineerContent.querySelectorAll('[data-action="tower"][disabled]')];
+  assert.ok(disabled.length > 0, "engineer level lists the ruled-out towers");
   disabled.forEach((button) => {
     assert.ok(button.getAttribute("title"), "the tooltip is kept");
     const lock = button.querySelector(".option-lock");
     assert.ok(lock, `${button.textContent} shows its reason as text`);
     assert.match(lock.textContent, /\S/);
   });
+  studio.setDetailLevel("GUIDED");
 
   dom.window.close();
 });
@@ -280,12 +286,13 @@ test("a gate strip of six gates appears from step 02 onward", () => {
 
   studio.enterMasterStep(1);
   studio.renderDrawer();
-  assert.equal(document.querySelector("#drawer-content .gate-strip"), null);
+  // No gates before the site is even chosen: the strip is empty in step 01.
+  assert.equal(document.querySelectorAll("#drawer .gate").length, 0);
 
   for (const step of [2, 3, 4]) {
     studio.enterMasterStep(step);
     studio.renderDrawer();
-    const gates = document.querySelectorAll("#drawer-content .gate");
+    const gates = document.querySelectorAll("#drawer .gate");
     assert.equal(gates.length, 6, `step ${step} shows six gates`);
     for (const gate of gates) {
       assert.match(gate.textContent, /PASS|OPEN/);
@@ -298,7 +305,7 @@ test("a gate strip of six gates appears from step 02 onward", () => {
   studio.enterMasterStep(5);
   studio.renderDrawer();
   const audit = studio.calculateAcceptance();
-  const gateMarks = [...document.querySelectorAll("#drawer-content .gate")].map((gate) =>
+  const gateMarks = [...document.querySelectorAll("#drawer .gate")].map((gate) =>
     gate.classList.contains("pass")
   );
   assert.equal(

@@ -58,9 +58,15 @@ export function createStaticServer(rootDir = ROOT_DIR) {
     const ext = path.extname(targetPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
+    // The preview iframe (and the proxy in front of it) is happy to keep a
+    // copy of these files, and a stale stylesheet or script looks exactly like
+    // a bug that was never fixed. Nothing here is worth caching: it is a
+    // hundred kilobytes served off localhost.
     res.writeHead(200, {
       "Content-Type": contentType,
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      Pragma: "no-cache",
+      Expires: "0",
     });
 
     if (method === "HEAD") {

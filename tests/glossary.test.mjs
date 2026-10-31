@@ -13,12 +13,17 @@ const ROUTES = [
   { step: 5 },
 ];
 
-function visitAll(studio) {
+// Every route is visited and its terms collected: the drawer only holds one
+// step at a time, so a single pass would miss the terms of the other steps.
+function visitAll(studio, document) {
+  const seen = new Set();
   for (const route of ROUTES) {
     if (route.microwave) studio.state.microwave.system = route.microwave;
     studio.enterMasterStep(route.step);
     studio.renderDrawer();
+    for (const node of document.querySelectorAll("[data-term]")) seen.add(node.dataset.term);
   }
+  return seen;
 }
 
 test("the glossary defines around twenty terms in plain English", () => {
@@ -48,9 +53,7 @@ test("every term used anywhere in the interface has a definition", () => {
     const { studio, document, dom } = createHeadlessStudio({ width: 1440, height: 900 });
     studio.setDetailLevel(detail);
     studio.state.onboarding.active = false;
-    visitAll(studio);
-
-    const used = [...document.querySelectorAll("[data-term]")].map((node) => node.dataset.term);
+    const used = [...visitAll(studio, document)];
     assert.ok(used.length > 0, `${detail} mode renders some glossary terms`);
     for (const term of new Set(used)) {
       assert.ok(

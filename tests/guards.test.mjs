@@ -54,7 +54,8 @@ test("design tokens: every :root custom property and the three font families are
     "--red": "#dc2626",
     "--heading": '"Barlow Condensed", sans-serif',
     "--body": '"Barlow", system-ui, sans-serif',
-    "--mono": '"Space Mono", monospace',
+    "--mono": '"Barlow Condensed", "Barlow", sans-serif',
+    "--term": 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace',
   });
 
   // The three families must stay wired to the same CSS variables everywhere.
@@ -65,11 +66,22 @@ test("design tokens: every :root custom property and the three font families are
   for (const decl of css.match(/font-family:[^;]+;/g) || []) {
     assert.match(decl, /font-family:\s*var\(--(heading|body|mono)\);/);
   }
-  // And they must still be declared exactly once each.
-  for (const family of ["Barlow Condensed", "Barlow", "Space Mono"]) {
+  // Only the project's own two families may be named anywhere, and the
+  // typewriter face is gone for good.
+  for (const family of ["Barlow Condensed", "Barlow"]) {
     const hits = css.match(new RegExp(`"${family}"`, "g")) || [];
-    assert.equal(hits.length, 1, `${family} should be declared exactly once`);
+    assert.ok(hits.length >= 1, `${family} should be declared`);
   }
+  assert.equal(
+    (css.match(/"Space Mono"/g) || []).length,
+    0,
+    "the typewriter face is no longer used"
+  );
+  // A terminal is allowed a monospace stack of its own, but only the terminal.
+  assert.match(css, /--term:\s*[^;]*monospace/);
+  const termUses = css.match(/var\(--term\)/g) || [];
+  assert.ok(termUses.length >= 1, "the CLI keeps a monospace stack");
+  assert.ok(termUses.length <= 6, "and it does not leak into the rest of the chrome");
 });
 
 test("3D palette, catalogues and camera/renderer/light constants are locked", () => {

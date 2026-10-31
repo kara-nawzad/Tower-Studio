@@ -12,29 +12,42 @@ const HTML = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
 test("updateHUD reuses the same cell nodes instead of rewriting the bar", () => {
   const { studio, document, dom } = createHeadlessStudio({ width: 1440, height: 900 });
   studio.state.onboarding.active = false;
+  studio.enterMasterStep(3);
   studio.updateHUD();
 
+  // The strip stays short; the panel carries every number.
   const hud = document.querySelector("#site-hud");
+  const grid = document.querySelector("#hud-panel-grid");
   const first = [...hud.querySelectorAll(".hud-cell")];
+  assert.ok(first.length >= 3 && first.length <= 5, `the strip has ${first.length} cells`);
   const identity = first.map((cell) => cell);
-  assert.ok(first.length >= 11, `the live bar has ${first.length} cells`);
+  const gridFirst = [...grid.querySelectorAll(".hud-cell")];
+  assert.equal(gridFirst.length, 24, "the all-numbers panel repeats every cell");
 
   // A second update with the same numbers must not replace any node.
+  const gridIdentity = gridFirst.map((cell) => cell);
   studio.updateHUD();
   const second = [...hud.querySelectorAll(".hud-cell")];
   assert.equal(second.length, first.length);
   second.forEach((cell, index) => {
     assert.equal(cell, identity[index], `cell ${index} was recreated`);
   });
+  [...grid.querySelectorAll(".hud-cell")].forEach((cell, index) => {
+    assert.equal(cell, gridIdentity[index], `panel cell ${index} was recreated`);
+  });
 
   // Changing one number rewrites only that cell's text.
-  const before = second[3].querySelector("strong").textContent;
+  const target = gridFirst.find((cell) => cell.querySelector("small").textContent === "Total load");
+  assert.ok(target, "the panel has a total-load cell");
+  const before = target.querySelector("strong").textContent;
   studio.state.power.radioLoadKw = 9;
   studio.normalizeState();
   studio.updateHUD();
-  const third = [...hud.querySelectorAll(".hud-cell")];
-  assert.equal(third[3], identity[3], "the cell itself is reused");
-  assert.notEqual(third[3].querySelector("strong").textContent, before, "and its value updated");
+  assert.equal(
+    gridFirst.find((cell) => cell.querySelector("small").textContent === "Total load"),
+    target
+  );
+  assert.notEqual(target.querySelector("strong").textContent, before, "and its value updated");
 
   dom.window.close();
 });
@@ -45,15 +58,17 @@ test("the HUD still shows the locked status vocabulary", () => {
   const hud = document.querySelector("#site-hud");
   assert.equal(hud.classList.contains("is-setup"), true);
   assert.match(hud.textContent, /\[ Setting up \]/);
-  assert.equal(hud.querySelectorAll(".hud-cell").length, 4);
+  assert.equal(hud.querySelectorAll(".hud-cell").length, 3);
+  assert.equal(document.getElementById("hud-chip-title").textContent, "SETTING UP");
 
   studio.state.onboarding.active = false;
   studio.updateHUD();
   assert.equal(hud.classList.contains("is-setup"), false);
   const cells = hud.querySelectorAll(".hud-cell");
-  assert.equal(cells.length, 11);
-  assert.ok(document.querySelector("#hud-site-status"), "the status cell keeps its id");
-  assert.match(hud.textContent, /\[ Live model \]/);
+  assert.ok(cells.length >= 3 && cells.length <= 5);
+  assert.match(document.getElementById("hud-chip-title").textContent, /LIVE MODEL/);
+  assert.ok(document.querySelector("#hud-panel-grid #hud-site-status") === null);
+  assert.match(document.querySelector("#hud-panel-grid").textContent, /\[ Live model \]/);
   dom.window.close();
 });
 
@@ -138,7 +153,9 @@ test("the hero image ships WebP and AVIF variants behind the original PNG", () =
       );
     }
   }
-  assert.match(HTML, /sizes="100vw"/);
+  // The hero box is the cover box (1.08x the window) and a portrait phone keeps
+  // only a slice of a landscape photograph, so `sizes` over-asks on purpose.
+  assert.match(HTML, /sizes="\(max-width: 767px\) 200vw, 108vw"/);
 
   // The largest variant is genuinely larger than the camera original, so the
   // picture is never upscaled by the browser on a wide desktop.
