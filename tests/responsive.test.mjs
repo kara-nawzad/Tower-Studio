@@ -180,6 +180,39 @@ test("touch targets and minimum type sizes are declared in CSS", () => {
   assert.match(CSS, /\.cli-output\s*\{[^}]*font:\s*400 11px/s);
 });
 
+test("coarse pointers get the full 44px floor for the compact controls", () => {
+  // These variants are deliberately small on the desktop, and the glossary
+  // terms are inline text whose own box is only as tall as the label.
+  const start = CSS.indexOf("@media (pointer: coarse)");
+  assert.ok(start > -1, "a coarse-pointer block exists");
+  const coarse = CSS.slice(start);
+  assert.match(coarse, /\.term::after\s*\{[^}]*inset:\s*-20px/s);
+  assert.ok(
+    /\.term-def\s*\{[^}]*z-index:\s*55/s.test(CSS),
+    "the open definition stays above the enlarged hit area"
+  );
+  // The compact variants are grouped into two rules, so check each rule body.
+  const rules = [...coarse.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({
+    selectors: m[1].split(",").map((part) => part.trim()),
+    body: m[2],
+  }));
+  for (const selector of [
+    ".locked-notice-actions .phase6-button",
+    ".restore-notice-actions .phase6-button",
+    ".profile-confirm-actions .phase6-button",
+    ".profile-chip .phase6-button",
+    ".gesture-hint-close",
+    ".hero-enter-btn",
+    ".sheet-handle",
+    ".more-options > summary",
+  ]) {
+    const rule = rules.find((r) => r.selectors.includes(selector));
+    assert.ok(rule, `${selector} is lifted on coarse pointers`);
+    assert.match(rule.body, /min-height:\s*44px/, `${selector} reaches 44px`);
+  }
+  assert.match(coarse, /\.hud-scroll-btn\s*\{[^}]*width:\s*44px/s);
+});
+
 test("the AI bar sits above the sheet on a phone", () => {
   const phoneBlock = CSS.slice(
     CSS.indexOf("@media (max-width: 767px)"),

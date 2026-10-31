@@ -4349,3 +4349,45 @@ input[type="range"]::-moz-range-thumb {
     animation: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Touch-only sizing. A few controls are deliberately compact on the desktop
+   (notice actions, the HUD scroller, the sheet handle, the "More options"
+   summary), and the glossary terms are inline text whose own box is only as
+   tall as the label. Coarse pointers get the full 44px floor instead. The term
+   hit area is grown with an out-of-flow ::after so the line boxes — and with
+   them every row height and the whole panel layout — stay exactly as they are.
+--------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .term::after {
+    content: "";
+    position: absolute;
+    /* .term-def sits at z-index 55, so the open definition stays on top. */
+    inset: -20px -6px;
+    z-index: 1;
+  }
+  .locked-notice-actions .phase6-button,
+  .restore-notice-actions .phase6-button,
+  .profile-confirm-actions .phase6-button,
+  .profile-chip .phase6-button {
+    min-height: 44px;
+  }
+  .hud-scroll-btn {
+    flex: 0 0 44px;
+    width: 44px;
+    min-height: 44px;
+  }
+  .gesture-hint-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .hero-enter-btn {
+    min-height: 44px;
+  }
+  .sheet-handle {
+    min-height: 44px;
+  }
+  .more-options > summary {
+    min-height: 44px;
+  }
+}

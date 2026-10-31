@@ -104,7 +104,9 @@ Tower-Studio/
 ├── LICENSE                        # MIT License
 ├── package-lock.json              # Locked dependency versions for reproducible CI
 ├── package.json                   # Project metadata and npm scripts
-└── README.md                      # Project overview, setup, and usage guide
+├── README.md                      # Project overview, setup, and usage guide
+├── TOWER-STUDIO-redesign-notes.md # Guided-flow redesign: commit map, sizes, deltas, limits
+└── screenshots/                   # Before/after captures at 360–1920 px (baseline/ + final/)
 ```
 
 ---
