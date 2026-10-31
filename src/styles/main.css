@@ -1419,13 +1419,6 @@ input[type="range"]::-moz-range-thumb {
   font: 700 10px/1.35 var(--mono);
 }
 
-.empty-note {
-  padding: 12px;
-  border: 1px dashed var(--line);
-  color: var(--muted);
-  font: 400 10px/1.5 var(--mono);
-}
-
 .power-nav {
   display: flex;
   margin-bottom: 12px;
@@ -1643,6 +1636,24 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 9px;
   color: var(--muted);
   font: 400 8px/1.5 var(--mono);
+}
+
+/* Read-only fact row: a fixed hardware property described, not selectable. */
+.read-only-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  background: var(--white);
+}
+.read-only-row strong {
+  font: 700 12px/1.2 var(--body);
+}
+.read-only-row small {
+  color: var(--muted);
+  font: 400 10px/1.35 var(--mono);
 }
 
 /* Five master steps remain stable; every rack view lives in Step 02. */
@@ -1939,6 +1950,21 @@ input[type="range"]::-moz-range-thumb {
   color: var(--muted);
   background: var(--paper);
 }
+.rack-slot-tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font: 700 7px/1.4 var(--mono);
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.rack-slot-tag.empty {
+  border-style: dashed;
+}
 .rack-slot.installed::after {
   content: "";
   position: absolute;
@@ -2214,12 +2240,6 @@ input[type="range"]::-moz-range-thumb {
 .mw-control input[type="range"] {
   min-height: 44px;
 }
-.mw-note {
-  margin-top: 9px;
-  color: var(--muted);
-  font: 400 8px/1.5 var(--mono);
-}
-
 .smart-filter {
   margin-bottom: 12px;
   border: 2px solid var(--ink);
@@ -3118,7 +3138,8 @@ input[type="range"]::-moz-range-thumb {
 
 #toast {
   position: fixed;
-  z-index: 50;
+  /* Above the hero tab (z-index 60) so a toast is never hidden by it (9.6 #59). */
+  z-index: 70;
   left: 50%;
   top: 22%;
   transform: translate(-50%, -10px);
@@ -3221,9 +3242,6 @@ input[type="range"]::-moz-range-thumb {
   .drawer {
     width: calc(100vw - 20px);
     bottom: calc(74px + env(safe-area-inset-bottom, 0px));
-    max-height: calc(44vh - 74px - env(safe-area-inset-bottom, 0px));
-  }
-  .drawer.terminal-mode {
     max-height: calc(44vh - 74px - env(safe-area-inset-bottom, 0px));
   }
   .drawer-head {

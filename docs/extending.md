@@ -27,15 +27,28 @@ This guide shows how to add new hardware models, CLI commands, or offline AI sce
 
 1. Add a new entry to the `TOWERS` catalog with height `range`, `defaultHeight`, `maxTwist`, `kgPerM`, `fixedWeight`, `areaPerM`, `cd`, and `section`.
 2. Register the structure key inside `ENVIRONMENTS[envKey].allowed` for each compatible site environment.
-3. Add its procedural 3D geometry builder inside `buildStructure()` and register pickable components via `register(meshOrGroup, metadata)`.
+3. Add its procedural 3D geometry builder inside `buildTower()` and register pickable components via `register(meshOrGroup, metadata)`.
 4. Update `towerDisallowedReason()` so incompatible environments display a clear engineering explanation.
 
 ### 2. Adding a 19-Inch Rack Module or Generation Profile (Step 02 & Step 05)
 
 1. Add the card's DC power consumption (in kW) to `RACK_SLOT_POWER`.
-2. Add plain-English overview and spec descriptions to `RACK_CONTENT`.
-3. Update `SMART_GENERATIONS` if the card belongs to a curated `2G`, `3G`, `4G`, `5G`, or `MIXED` profile.
-4. Render its 3D shelf geometry inside `buildRack()` and register it so clicking the card opens its inspector.
+2. Add **vendor-neutral** plain-English overview and spec descriptions to `RACK_CONTENT`.
+   No brand or model name may ever live in `RACK_CONTENT`, because it is shared by
+   every vendor.
+3. Add the vendor's own name for the card to `VENDOR_SLOT_NAMES` (and the short
+   front-panel text to `VENDOR_SLOT_BADGE`). Use a string when every generation
+   shares the name, or an object with a `default` plus optional `2G` / `3G` / `4G` /
+   `5G` overrides. Where no real product name is certain, use vendor-neutral
+   wording such as "Site IP router", "TDM circuit emulation unit", "Microwave
+   shelf" or "Digital unit (GSM)".
+4. Update `VENDOR_CHASSIS` if the profile needs its own cabinet summary line, and
+   `SMART_GENERATIONS` when a whole new generation is introduced.
+5. Render its 3D shelf geometry inside `buildRack()` and register it so clicking
+   the card opens its inspector.
+
+> `tests/vendor-catalogue.test.mjs` fails if any vendor x generation combination
+> shows a competitor's brand or model name anywhere in the drawer or CLI output.
 
 ### 3. Adding a Vendor CLI Command (Step 05)
 
@@ -53,4 +66,13 @@ This guide shows how to add new hardware models, CLI commands, or offline AI sce
 
 ## Adding Automated Tests
 
-Add new test cases in [`tests/app.test.mjs`](../tests/app.test.mjs) using Node's built-in `node:test` and `node:assert/strict` modules. The test suite boots `index.html` and `src/js/app.js` inside `jsdom` with `three`, allowing you to call `window.TowerStudio` methods directly and assert engineering outputs.
+Add new test cases in [`tests/app.test.mjs`](../tests/app.test.mjs) using Node's built-in `node:test` and `node:assert/strict` modules. The test suite boots `index.html` and `src/js/app.js` inside `jsdom` with `three` (see `tests/helpers/headless.mjs`), allowing you to call `window.TowerStudio` methods directly and assert engineering outputs.
+
+Three suites are kept separate on purpose:
+
+- `tests/app.test.mjs` — product behaviour (flow, HUD, hero tab, CLI, AI).
+- `tests/guards.test.mjs` — the red lines: colour tokens, fonts, the 3D material
+  palette, catalogue tables, camera constants, registry sizes and the
+  default-state engineering numbers.
+- `tests/vendor-catalogue.test.mjs` — vendor naming honesty and the Phase 1
+  truthfulness fixes.

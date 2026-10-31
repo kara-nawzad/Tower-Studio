@@ -302,17 +302,17 @@ const triage = {
   options: [],
   report: "",
   curve: null,
-  optimized: false,
   marker: null,
   cameraTarget: null,
   generatorStart: 0,
   lastChoice: null,
+  // Snapshot taken before option 2 throttles the carrier settings, so the
+  // throttle can always be undone (audit 9.6 #50).
+  throttleBackup: null,
 };
 
 const microwaveSim = {
   azimuth: st.microwave.azimuth,
-  wasLocked: false,
-  lastBeep: 0,
 };
 
 const cellularSim = {
@@ -349,10 +349,12 @@ const powerSim = {
   batteryCurrent: 0,
   fuelRemainingL: 780,
   failedRectifier: null,
-  transferMs: 0,
   lastHudUpdate: 0,
 };
 
+// Vendor-neutral card reference copy. Every brand or model name that appears in
+// the UI comes from VENDOR_SLOT_NAMES below, so no vendor's cabinet can ever
+// show a competitor's product name (audit 9.4 #25).
 const RACK_CONTENT = {
   cabinet: {
     title: "19-inch Telecom Cabinet & Rack",
@@ -362,35 +364,34 @@ const RACK_CONTENT = {
   door: {
     title: "Hinged Cabinet Access Door",
     what: "The protective front cover of the equipment cabinet.",
-    does: "It swings open on real hinges so you can reach the 19-inch shelves. Indoor Ericsson racks use open mesh; outdoor enclosures use sealed double doors.",
+    does: "It swings open on real hinges so you can reach the 19-inch shelves. Indoor racks use open mesh; outdoor enclosures use sealed double doors.",
   },
   fau: {
-    title: "FAU · Four-Fan Top Exhaust Unit",
+    title: "Top Fan Exhaust Unit",
     what: "A 1U cooling unit with four fans at the very top of the rack.",
-    does: "It pulls hot air away from the cards and exhausts it out the top, while the SCU watches temperature and adjusts fan speed.",
+    does: "It pulls hot air away from the cards and exhausts it out the top, while the environmental supervisor watches temperature and adjusts fan speed.",
   },
   radio: {
-    title: "6U Radio Shelf · RUS / RUG / RUW",
+    title: "6U Radio Shelf",
     what: "The upper equipment shelf with positions for as many as twelve radio units.",
     does: "It organizes the radio hardware that sends and receives the tower's wireless channels. Empty positions leave room for future sectors and bands.",
   },
   baseband: {
-    title: "Ericsson Baseband 6630 (5G NR & LTE)",
-    what: "The supercomputer brain of the cell site.",
-    does: "Takes digital internet data and turns it into radio signals for thousands of smartphones simultaneously. It runs 2G, 3G, 4G, and 5G at the same time and has 15 optical fiber ports.",
+    title: "Digital Baseband Unit",
+    what: "The processing brain of the cell site.",
+    does: "Takes digital internet data and turns it into radio signals for thousands of smartphones simultaneously. It runs 2G, 3G, 4G and 5G at the same time and has 15 optical fiber ports.",
     specs: [
       ["FORM", "1U · digital shelf"],
       ["OPTICAL PORTS", "15 × CPRI / eCPRI"],
-      ["SERVICE MODE", "5G NR + LTE mixed-mode"],
+      ["SERVICE MODE", "multi-standard mixed-mode"],
       ["DC INPUT", "180 W"],
     ],
   },
   dug: {
-    title: "Digital Unit for GSM (DUG 20)",
-    what: "The classic 2G phone call processor (31mm wide).",
-    does: 'Handles up to 96 simultaneous voice calls using traditional copper E1 phone lines. It also acts as the "Master DU" to report site alarms.',
+    title: "Digital Unit (GSM)",
+    what: "The classic 2G phone call processor (31 mm wide).",
+    does: "Handles up to 96 simultaneous voice calls using traditional copper E1 phone lines. It also acts as the master digital unit that reports site alarms.",
     specs: [
-      ["MODEL", "DUG 20 01"],
       ["WIDTH", "31 mm · single slot"],
       ["CAPACITY", "12 TRX · 96 voice calls"],
       ["LEGACY PORTS", "4 × E1"],
@@ -398,12 +399,11 @@ const RACK_CONTENT = {
     ],
   },
   duw: {
-    title: "Digital Unit for WCDMA (DUW 30)",
-    what: "The 3G mobile data processor (62mm wide — twice as thick!).",
+    title: "Digital Unit (WCDMA)",
+    what: "The 3G mobile data processor (62 mm wide — twice as thick!).",
     does: "Processes 3G WCDMA mobile data and connects to the packet network through Ethernet at up to 48 Mbps.",
     why: "3G math is complex; it needs twice as many computer chips and heavy aluminum heat sinks, taking up two full slots.",
     specs: [
-      ["MODEL", "DUW 30 01"],
       ["WIDTH", "62 mm · double slot"],
       ["DATA", "48 Mbps · WCDMA"],
       ["CONNECTION", "Ethernet"],
@@ -411,36 +411,34 @@ const RACK_CONTENT = {
     ],
   },
   scu: {
-    title: "SCU (Fan Supervisor) & SHU (Enclosure Bus Hub)",
+    title: "Environmental Supervisor",
     what: "The cabinet's temperature watcher and cooling controller.",
-    does: "The SCU measures temperatures and speeds up the fans when it gets hot. The SHU acts like a network switch, connecting all support cards cleanly without messy wires.",
+    does: "It measures temperatures and speeds up the fans when it gets hot.",
     specs: [
       ["FUNCTION", "Fan + environmental supervisor"],
       ["CONTROL", "Temperature-dependent fan speed"],
-      ["ALARM PATH", "SAU3 → SCU → SHU"],
       ["DC INPUT", "10 W"],
     ],
   },
   shu: {
-    title: "SCU (Fan Supervisor) & SHU (Enclosure Bus Hub)",
-    what: "A tidy support-hub unit for the cabinet's EC-Bus wiring star.",
-    does: "The SCU measures temperatures and speeds up the fans when it gets hot. The SHU acts like a network switch, connecting all support cards cleanly without messy wires.",
+    title: "Enclosure Bus Hub",
+    what: "A tidy support-hub unit for the cabinet's internal bus wiring star.",
+    does: "It acts like a network switch, connecting all support cards cleanly without messy wires.",
     specs: [
-      ["FUNCTION", "Support Hub Unit"],
-      ["TOPOLOGY", "EC-Bus wiring star"],
-      ["ALARM PATH", "SCU → SHU → Master DUG"],
+      ["FUNCTION", "Support hub unit"],
+      ["TOPOLOGY", "Cabinet bus wiring star"],
       ["DC INPUT", "10 W"],
     ],
   },
   "power-shelf": {
-    title: "3U Power Shelf · PCF / PCU / PSU / PDU / PFU / BFU",
+    title: "3U Power Shelf",
     what: "The cabinet's own protected -48V DC distribution shelf.",
-    does: "It receives power from the Phase 2 rectifier plant, filters surges, protects each branch, and connects the battery fuse and low-voltage disconnect.",
+    does: "It receives power from the rectifier plant, filters surges, protects each branch, and connects the battery fuse and low-voltage disconnect.",
   },
   router: {
-    title: "Ericsson Router 6471 (Site IP Router)",
+    title: "Site IP Router",
     what: "The on-site internet router for the entire tower.",
-    does: "Takes incoming 10-Gigabit fiber/microwave backhaul and separates the traffic: sends 5G data to the Baseband, and sends 2G voice to the TDM 1001.",
+    does: "Takes incoming 10-Gigabit fiber/microwave backhaul and separates the traffic: sends mobile data to the baseband, and sends legacy voice to the circuit emulation unit.",
     specs: [
       ["FORM", "1U · half-width"],
       ["ROUTING", "30 Gbps IP"],
@@ -450,7 +448,7 @@ const RACK_CONTENT = {
     ],
   },
   tdm: {
-    title: "TDM 1001 Circuit Emulation Module",
+    title: "TDM Circuit Emulation Unit",
     what: "A translator between the modern internet and old phone lines.",
     does: "Modern backhaul only speaks IP packets. This card turns those packets back into 8 traditional copper E1 lines so older 2G towers can still make phone calls!",
     specs: [
@@ -462,20 +460,19 @@ const RACK_CONTENT = {
     ],
   },
   amm: {
-    title: "MINI-LINK AMM 2P / 6P Microwave Shelf",
+    title: "Microwave Shelf",
     what: "The plug-in shelf for the tower's microwave backhaul modules.",
-    does: "It connects the cabinet to a wireless microwave dish when fiber is unavailable, carrying IP traffic to and from Router 6471.",
+    does: "It connects the cabinet to a wireless microwave dish when fiber is unavailable, carrying IP traffic to and from the site router.",
     specs: [
       ["FORM", "Transmission compartment"],
-      ["OPTIONS", "AMM 2P / AMM 6P"],
       ["SERVICE", "Microwave IP backhaul"],
       ["DC INPUT", "55 W"],
     ],
   },
   ovp: {
-    title: "Over Voltage Protection Box (OVP)",
+    title: "Surge Protection Box",
     what: "A lightning shield for the cabinet's alarm wires.",
-    does: "External wires running to the fuel tank and door sensors can catch thousands of volts during a storm. The OVP absorbs lightning surges so the computer chips inside don't vaporize.",
+    does: "External wires running to the fuel tank and door sensors can catch thousands of volts during a storm. This box absorbs lightning surges so the electronics inside are protected.",
     specs: [
       ["POSITION", "Alarm highway station 1"],
       ["PROTECTION", "External dry-contact surge suppression"],
@@ -484,14 +481,13 @@ const RACK_CONTENT = {
     ],
   },
   sau: {
-    title: "Support Alarm Digitizer (SAU3)",
+    title: "Support Alarm Digitizer",
     what: "A sensor card with 6 input and 3 output ports.",
     does: "Reads whether the door is open, the generator is broken, or fuel is low, and turns those physical switches into digital alarm messages.",
     specs: [
       ["POSITION", "Alarm highway station 2"],
       ["INPUTS", "6 dry-contact inputs"],
       ["OUTPUTS", "3 control outputs"],
-      ["NEXT STATION", "SCU"],
       ["DC INPUT", "5 W"],
     ],
   },
@@ -501,6 +497,176 @@ const RACK_CONTENT = {
     does: "It keeps backup batteries low and stable while the Master Ground Bar bonds every cabinet panel and support card to the site earth loop.",
   },
 };
+
+// Vendor x slot naming. A string applies to every generation; an object may
+// override per generation (2G / 3G / 4G / 5G / MIXED) and must provide `default`.
+// Only names that are certainly real for that vendor are used; everything else
+// falls back to the vendor-neutral wording the owner approved.
+const VENDOR_SLOT_NAMES = {
+  ERICSSON: {
+    fau: "Ericsson FAU fan unit",
+    radio: "Ericsson radio shelf · RUS / RUG / RUW",
+    baseband: { default: "Ericsson Baseband 6630", "5G": "Ericsson Baseband 6648" },
+    dug: "Ericsson DUG 20 digital unit (GSM)",
+    duw: "Ericsson DUW 30 digital unit (WCDMA)",
+    scu: "Ericsson SCU support control unit",
+    shu: "Ericsson SHU support hub unit",
+    router: "Ericsson Router 6471 site IP router",
+    tdm: "Ericsson TDM 1001 circuit emulation unit",
+    amm: "Ericsson MINI-LINK AMM 2P microwave shelf",
+    ovp: "Ericsson OVP over-voltage protection box",
+    sau: "Ericsson SAU 3 support alarm unit",
+    "power-shelf": "Ericsson power shelf · PCF / PCU / PSU / PDU / PFU / BFU",
+    "battery-tray": "Battery tray & master ground bar",
+  },
+  HUAWEI: {
+    fau: "Huawei fan module · top exhaust",
+    radio: "Huawei radio shelf",
+    baseband: "Huawei UBBP baseband card",
+    dug: {
+      default: "Huawei UMPT control card",
+      "2G": "Huawei GTMU control card (GSM)",
+      "3G": "Huawei WMPT control card (WCDMA)",
+    },
+    duw: { default: "Huawei UBBP capacity card", "3G": "Huawei WBBP capacity card (WCDMA)" },
+    scu: "Huawei environmental supervisor",
+    shu: "Huawei enclosure bus hub",
+    router: "Site IP router",
+    tdm: "TDM circuit emulation unit",
+    amm: "Huawei RTN 950A microwave shelf",
+    ovp: "Surge protection box",
+    sau: "Alarm digitizer unit · 6 in / 3 out",
+    "power-shelf": "Huawei power shelf",
+    "battery-tray": "Battery tray & master ground bar",
+  },
+  NOKIA: {
+    fau: "Nokia fan unit · top exhaust",
+    radio: "Nokia radio shelf",
+    baseband: "Nokia ABIL capacity card",
+    dug: {
+      default: "Nokia ASIK control card",
+      "2G": "Digital unit (GSM)",
+      "3G": "Digital unit (WCDMA)",
+    },
+    duw: { default: "Nokia ABIL capacity extension", "3G": "WCDMA capacity card" },
+    scu: "Nokia environmental supervisor",
+    shu: "Nokia enclosure bus hub",
+    router: "Site IP router",
+    tdm: "TDM circuit emulation unit",
+    amm: "Microwave shelf",
+    ovp: "Surge protection box",
+    sau: "Alarm digitizer unit · 6 in / 3 out",
+    "power-shelf": "Nokia power shelf",
+    "battery-tray": "Battery tray & master ground bar",
+  },
+};
+
+const VENDOR_CHASSIS = {
+  ERICSSON: {
+    "2G": "Ericsson DUG 20 · Router 6471 + TDM 1001 · AMM 2P",
+    "3G": "Ericsson DUG 20 + DUW 30 · packet transmission",
+    "4G": "Ericsson LTE Baseband 6630",
+    "5G": "Ericsson Baseband 6630 · Router 6471 10G SFP+",
+  },
+  HUAWEI: {
+    "2G": "Huawei GTMU · BTS3900 GSM",
+    "3G": "Huawei WMPT + WBBP · WCDMA",
+    "4G": "Huawei BBU5900 · UMPT + UBBP · RTN 950A",
+    "5G": "Huawei BBU5900 · UMPT + UBBP · RTN 950A",
+  },
+  NOKIA: {
+    "2G": "Nokia GSM system module",
+    "3G": "Nokia WCDMA system module",
+    "4G": "Nokia AirScale · ASIK + ABIL",
+    "5G": "Nokia AirScale Subrack · ASIK + ABIL",
+  },
+};
+
+const GENERATION_PRIORITY = ["5G", "4G", "3G", "2G"];
+
+// Highest technology present in the Custom Multi-Gen selection; used to pick the
+// generation-specific card name for a custom profile.
+function dominantCustomGeneration(list = st.customGenerations) {
+  const gens = normalizeCustomGenerations(list);
+  return GENERATION_PRIORITY.find((gen) => gens.includes(gen)) || "2G";
+}
+
+// Compact text stencilled on the front face of the 3D rack modules.
+const VENDOR_SLOT_BADGE = {
+  ERICSSON: {
+    fau: "FAU",
+    baseband: { default: "BB 6630", "5G": "BB 6648" },
+    dug: "DUG 20",
+    duw: "DUW 30",
+    scu: "SCU",
+    shu: "SHU",
+    router: "ROUTER 6471",
+    tdm: "TDM 1001",
+    amm: "AMM 2P",
+    ovp: "OVP",
+    sau: "SAU 3",
+  },
+  HUAWEI: {
+    fau: "FAN",
+    baseband: "UBBP",
+    dug: { default: "UMPT", "2G": "GTMU", "3G": "WMPT" },
+    duw: { default: "UBBP", "3G": "WBBP" },
+    scu: "EMU",
+    shu: "HUB",
+    router: "SITE ROUTER",
+    tdm: "TDM CES",
+    amm: "RTN 950A",
+    ovp: "SURGE",
+    sau: "ALARM I/O",
+  },
+  NOKIA: {
+    fau: "FAN",
+    baseband: "ABIL",
+    dug: { default: "ASIK", "2G": "DIG GSM", "3G": "DIG WCDMA" },
+    duw: { default: "ABIL", "3G": "WCDMA" },
+    scu: "ENV",
+    shu: "HUB",
+    router: "SITE ROUTER",
+    tdm: "TDM CES",
+    amm: "MICROWAVE",
+    ovp: "SURGE",
+    sau: "ALARM I/O",
+  },
+};
+
+function resolveVendorSlotEntry(table, key, vendor = st.rack.vendor, generation = st.generation) {
+  const entry = (table[vendor] || table.ERICSSON)[key];
+  if (!entry) return null;
+  if (typeof entry === "string") return entry;
+  if (generation === "CUSTOM") {
+    const dominant = dominantCustomGeneration();
+    return entry[dominant] || entry.CUSTOM || entry.default;
+  }
+  return entry[generation] || entry.default;
+}
+
+function slotName(key, vendor = st.rack.vendor, generation = st.generation) {
+  return resolveVendorSlotEntry(VENDOR_SLOT_NAMES, key, vendor, generation);
+}
+
+// Short uppercase text stencilled on the 3D module face.
+function slotBadge(key, fallback = "") {
+  return (resolveVendorSlotEntry(VENDOR_SLOT_BADGE, key) || fallback).toUpperCase();
+}
+
+// Same name without the leading vendor word, for compact summaries.
+function slotShortName(key, vendor = st.rack.vendor, generation = st.generation) {
+  return String(slotName(key, vendor, generation) || "").replace(/^(Ericsson|Huawei|Nokia)\s+/, "");
+}
+
+function allSlotNames(vendor = st.rack.vendor, generation = st.generation) {
+  const labels = {};
+  Object.keys(RACK_SLOT_POWER).forEach((key) => {
+    const name = slotName(key, vendor, generation);
+    if (name) labels[key] = name;
+  });
+  return labels;
+}
 
 const RACK_SLOT_POWER = {
   fau: 0.04,
@@ -527,7 +693,7 @@ const SMART_GENERATIONS = {
   "4G": { label: "4G LTE", throughput: "300 Mbps", rfMode: "ACTIVE" },
   "5G": { label: "5G NR", throughput: "3.0 Gbps", rfMode: "ACTIVE" },
   MIXED: { label: "Mixed-Mode", throughput: "3.0 Gbps", rfMode: "MIXED" },
-  CUSTOM: { label: "Custom Multi-Gen", throughput: "42.2 Mbps", rfMode: "MIXED" },
+  CUSTOM: { label: "Custom Multi-Gen", rfMode: "MIXED" },
 };
 
 function normalizeCustomGenerations(list = st.customGenerations) {
@@ -559,11 +725,22 @@ function customGenerationMetrics(list = st.customGenerations) {
   };
 }
 
+// Site alarm station. These four units are physically present in every real
+// cabinet because the external dry contacts (door, fuel, generator) have to be
+// surge-protected, digitized and reported no matter which radio generation is
+// installed (audit 9.2 #14).
+const ALARM_PATH_SLOTS = ["ovp", "sau", "scu", "shu"];
+const ALARM_MASTER_SLOTS = ["dug", "baseband"];
+
+function withAlarmStation(slots) {
+  return [...new Set([...slots, ...ALARM_PATH_SLOTS])];
+}
+
 function smartProfile(vendor = st.rack.vendor, generation = st.generation) {
   const all = Object.keys(RACK_SLOT_POWER);
   const profile = {
     slots: all,
-    labels: {},
+    labels: allSlotNames(vendor, generation),
     chassis: `${vendor} multi-generation 19-inch rack`,
     rfMode: "MIXED",
   };
@@ -586,80 +763,34 @@ function smartProfile(vendor = st.rack.vendor, generation = st.generation) {
         slots.push("dug");
       }
     }
-    profile.slots = slots;
+    profile.slots = withAlarmStation(slots);
     profile.rfMode = custom.rfMode;
-    if (vendor === "ERICSSON") {
-      if (has4G || has5G) {
-        profile.labels.router = "Ericsson Router 6471 · 10G SFP+";
-        profile.labels.baseband = has5G ? "Ericsson Baseband 6648" : "Ericsson Baseband 6630";
-      }
-      if (has2G && !has3G && !has4G && !has5G) profile.labels.amm = "MINI-LINK AMM 2P";
-    } else if (vendor === "HUAWEI" && (has4G || has5G)) {
-      profile.labels = {
-        dug: has2G ? "Huawei UMPT + GSM Card" : "Huawei UMPT Control Card",
-        baseband: "Huawei UBBP Baseband Card",
-        ...(has3G ? { duw: "Huawei UBBP WCDMA Card" } : {}),
-        ...(slots.includes("amm") ? { amm: "Huawei RTN 950A Microwave" } : {}),
-      };
-    } else if (vendor === "NOKIA" && (has4G || has5G)) {
-      profile.labels = {
-        dug: "Nokia ASIK Control Card",
-        baseband: "Nokia ABIL Capacity Card",
-        ...(has3G ? { duw: "Nokia ABIL WCDMA Extension" } : {}),
-      };
-    }
-    profile.chassis = `${vendor} Custom (${custom.label}) · ${[
-      has2G ? "DUG 20" : "",
-      has3G ? "DUW 30" : "",
-      has4G ? "Baseband 6630" : "",
-      has5G ? "Baseband 6648" : "",
-    ]
-      .filter(Boolean)
-      .join(" + ")}`;
+    profile.labels = allSlotNames(vendor, generation);
+    const cards = ["dug", "duw", "baseband"]
+      .filter((key) => profile.slots.includes(key))
+      .map((key) => slotShortName(key, vendor, generation));
+    profile.chassis = `${vendor} Custom (${custom.label}) · ${[...new Set(cards)].join(" + ")}`;
     return profile;
   }
   const legacy = generation === "2G" || generation === "3G";
   profile.rfMode = legacy ? "LEGACY" : "ACTIVE";
   if (generation === "2G") {
     profile.slots = ["fau", "dug", "router", "tdm", "amm"];
-    profile.chassis = `${vendor} 2G voice · E1 transmission`;
   } else if (generation === "3G") {
     profile.slots = ["fau", "dug", "duw", "router", "amm"];
-    profile.chassis = `${vendor} 3G WCDMA · packet transmission`;
   } else {
     profile.slots = ["fau", "baseband", "router"];
-    profile.chassis = `${vendor} ${generation} digital baseband`;
-  }
-  if (vendor === "ERICSSON" && generation === "2G") {
-    profile.labels.amm = "MINI-LINK AMM 2P";
-    profile.chassis = "Ericsson DUG 20 · Router 6471 + TDM 1001 · AMM 2P";
-  }
-  if (vendor === "ERICSSON" && (generation === "4G" || generation === "5G")) {
-    profile.labels.router = "Ericsson Router 6471 · 10G SFP+";
-    profile.chassis =
-      generation === "5G"
-        ? "Ericsson Baseband 6630 · Router 6471 10G SFP+"
-        : "Ericsson LTE Baseband 6630";
   }
   if (vendor === "HUAWEI" && (generation === "4G" || generation === "5G")) {
     profile.slots = ["fau", "dug", "baseband", "duw", "amm"];
-    profile.labels = {
-      dug: "Huawei UMPT Control Card",
-      baseband: "Huawei UBBP Baseband Card",
-      duw: "Huawei UBBP Capacity Card",
-      amm: "Huawei RTN 950A Microwave",
-    };
-    profile.chassis = "Huawei BBU5900 · UMPT + UBBP · RTN 950A";
   }
   if (vendor === "NOKIA" && generation === "5G") {
     profile.slots = ["fau", "dug", "baseband", "duw"];
-    profile.labels = {
-      dug: "Nokia ASIK Control Card",
-      baseband: "Nokia ABIL Capacity Card",
-      duw: "Nokia ABIL Capacity Extension",
-    };
-    profile.chassis = "Nokia AirScale Subrack · ASIK + ABIL";
   }
+  profile.slots = withAlarmStation(profile.slots);
+  profile.chassis =
+    (VENDOR_CHASSIS[vendor] || VENDOR_CHASSIS.ERICSSON)[generation] ||
+    `${vendor} ${generation} digital baseband`;
   return profile;
 }
 
@@ -685,31 +816,21 @@ function applySmartProfile() {
   cellularSim.running = false;
 }
 
-function rackCardLabel(key, fallback) {
-  return (smartProfile().labels[key] || fallback).toUpperCase();
-}
-
 function rackCardContent(key) {
   const base = RACK_CONTENT[key] || RACK_CONTENT.cabinet;
-  const label = smartProfile().labels[key];
-  if (!label) return base;
-  const control = /UMPT|ASIK/.test(label);
-  return {
-    ...base,
-    title: label,
-    what: `The curated ${label} inside the ${smartProfile().chassis}.`,
-    does: control
-      ? "It controls the baseband shelf, synchronizes the radios and manages software, clocks and site alarms."
-      : /RTN/.test(label)
-        ? "It provides the vendor-specific microwave transmission interface between the baseband and the outdoor link."
-        : "It processes the vendor's digital baseband channels and connects them to the active radio generation.",
-  };
+  const label = smartProfile().labels[key] || slotName(key);
+  return { ...base, title: label || base.title };
 }
 
 function cellularGeneration() {
   if (st.generation === "CUSTOM") {
     const custom = customGenerationMetrics();
-    return { label: custom.label, throughput: custom.throughput, rfMode: custom.rfMode };
+    // Computed on demand; SMART_GENERATIONS is never mutated at runtime (audit 9.2).
+    return {
+      label: custom.label,
+      throughput: custom.throughput,
+      rfMode: custom.rfMode,
+    };
   }
   return SMART_GENERATIONS[st.generation] || SMART_GENERATIONS.MIXED;
 }
@@ -762,7 +883,9 @@ function rackHousing() {
 }
 
 function alarmPathReady() {
-  return ["ovp", "sau", "scu", "shu", "dug"].every((key) => st.rack.slots[key]);
+  const station = ALARM_PATH_SLOTS.every((key) => st.rack.slots[key]);
+  const master = ALARM_MASTER_SLOTS.some((key) => st.rack.slots[key]);
+  return station && master;
 }
 
 function calculateRack() {
@@ -788,6 +911,34 @@ function calculateRack() {
       rackSim.patchLink && rackSim.patchProgress >= 1 && st.rack.slots.router && st.rack.slots.tdm,
     alarmPathReady: alarmPathReady(),
   };
+}
+
+function rackHousingModel(location = st.rack.location) {
+  const saved = st.rack.location;
+  if (location !== saved) st.rack.location = location;
+  const model = rackHousing().model;
+  if (location !== saved) st.rack.location = saved;
+  return model;
+}
+
+// Visible, vendor-correct description of the external alarm highway.
+function alarmPathRoute() {
+  const master = st.rack.slots.dug
+    ? slotName("dug")
+    : st.rack.slots.baseband
+      ? slotName("baseband")
+      : "master card";
+  return [slotName("ovp"), slotName("sau"), slotName("scu"), slotName("shu"), `MASTER ${master}`]
+    .join(" → ")
+    .toUpperCase();
+}
+
+function alarmPathBlockedReason() {
+  const missing = ALARM_PATH_SLOTS.filter((key) => !st.rack.slots[key]).map((key) => slotName(key));
+  if (!ALARM_MASTER_SLOTS.some((key) => st.rack.slots[key])) {
+    missing.push(`a master card (${slotName("dug")} or ${slotName("baseband")})`);
+  }
+  return missing.length ? `Install ${missing.join(", ")} first` : "";
 }
 
 function normalizeRackState() {
@@ -875,8 +1026,24 @@ function azimuthError(a, b) {
   return Math.abs(((a - b + 540) % 360) - 180);
 }
 
+// Lowest height at which a dish may be mounted on the structure, in metres.
+const MW_MIN_MOUNT_Y = 1.4;
+
+function towerTopY() {
+  if (st.tower === "ROOFTOP_POLE" || st.tower === "COW_TELESCOPIC_TRUCK") return st.H;
+  return (st.tower === "ROOFTOP_RTT_DRAME" ? 1.0 : 0.69) + st.H;
+}
+
+// Height of the topmost dish for a given dish count. Mirrors buildMicrowave so
+// the rule and the drawn geometry can never disagree.
+function primaryDishY(dishCount = 2) {
+  return Math.max(MW_MIN_MOUNT_Y, towerTopY() - (dishCount === 2 ? 0.7 : 1.7));
+}
+
+// Space diversity needs the lower dish to keep real vertical clearance above the
+// minimum mount height, not just a tall tower (audit 9.4 #32).
 function spaceDiversityAllowed() {
-  return st.H >= st.microwave.spacing + 1.5;
+  return primaryDishY(2) - st.microwave.spacing >= MW_MIN_MOUNT_Y;
 }
 
 function formatCapacity(mbps) {
@@ -953,7 +1120,6 @@ function normalizeMicrowaveState() {
 function normalizeCellularState() {
   if (!SMART_GENERATIONS[st.generation]) st.generation = "MIXED";
   st.customGenerations = normalizeCustomGenerations(st.customGenerations);
-  SMART_GENERATIONS.CUSTOM.throughput = customGenerationMetrics(st.customGenerations).throughput;
   st.cellular.sector = clamp(Math.round(Number(st.cellular.sector) || 0), 0, 2);
   st.cellular.fault = !!st.cellular.fault;
   st.cellular.sectors.forEach((sector, index) => {
@@ -989,6 +1155,21 @@ function normalizePowerState() {
   p.batteryAh = [100, 150, 200].includes(Number(p.batteryAh)) ? Number(p.batteryAh) : 200;
   p.batteryType = p.batteryType === "LITHIUM" ? "LITHIUM" : "VRLA";
   p.climateSetpoint = clamp(Number(p.climateSetpoint), 18, 30);
+}
+
+// One rule for every environment change: keep the current tower when the new
+// environment allows it (clamping height), otherwise fall back to the
+// environment's default tower at its default height (audit 9.6 #55).
+function applyEnvironmentTowerRule(envKey) {
+  const env = ENVIRONMENTS[envKey];
+  if (!env) return;
+  if (env.allowed.includes(st.tower)) {
+    const [min, max] = TOWERS[st.tower].range;
+    st.H = clamp(st.H, min, max);
+    return;
+  }
+  st.tower = env.defaultTower;
+  st.H = TOWERS[st.tower].defaultHeight;
 }
 
 function normalizeState() {
@@ -1226,7 +1407,7 @@ function calculateAcceptance() {
   const microwave = calculateMicrowave();
   const sweeps = [0, 1, 2].map((index) => calculateSweep(index));
   const worstVswr = Math.max(...sweeps.map((result) => result.max));
-  const rfPass = sweeps.every((result) => result.max <= 1.32);
+  const rfPass = sweeps.every((result) => result.max <= RF_VSWR_LIMIT);
   const activeAlarms = siteAlarms();
   const criticalAlarms = activeAlarms.filter(
     (alarm) => alarm.severity === "CRITICAL" || alarm.severity === "MAJOR"
@@ -1276,10 +1457,10 @@ function calculateAcceptance() {
     {
       id: "rf",
       title: "RF Line Sweeps",
-      value: `3 sectors · worst VSWR ${worstVswr.toFixed(2)} · limit ≤ 1.32`,
+      value: `3 sectors · worst VSWR ${worstVswr.toFixed(2)} · limit ≤ ${RF_VSWR_LIMIT.toFixed(2)}`,
       pass: rfPass,
       explanation: rfPass
-        ? "All three feeder/antenna lines satisfy the ≤ 1.32 acceptance standard."
+        ? `All three feeder/antenna lines satisfy the ≤ ${RF_VSWR_LIMIT.toFixed(2)} acceptance standard.`
         : "High reflection detected. Clear the waterlogged-connector/cable-kink scenario and repeat the sector sweeps.",
     },
     {
@@ -3266,7 +3447,7 @@ function buildRackAlarmHighway(housing) {
   group.visible = rackSim.alarmBadge || rackSim.alarmTraceActive;
   rackVisuals.alarmGroup = group;
   rackVisuals.alarmCurve = curve;
-  // External dry-contact bundle: door, fuel and generator sensors enter the OVP first.
+  // External dry-contact bundle: door, fuel and generator sensors enter the surge protection box first.
   const ovp = points[0];
   const external = cable(
     [ovp.clone(), ovp.clone().add(V3(0.16, -0.18, 0.06)), ovp.clone().add(V3(0.28, -0.65, 0.35))],
@@ -3431,7 +3612,7 @@ function buildRack() {
     shelf2Y + RACK_U * 0.72,
     0.46,
     RACK_U * 0.86,
-    rackCardLabel("baseband", "BASEBAND 6630 · 5G / 4G"),
+    slotBadge("baseband", "BASEBAND"),
     moduleZ,
     MAT.blue
   );
@@ -3441,7 +3622,7 @@ function buildRack() {
     shelf2Y - RACK_U * 0.72,
     0.058,
     RACK_U * 1.35,
-    rackCardLabel("dug", "DUG 20 01"),
+    slotBadge("dug", "DIGITAL UNIT"),
     moduleZ
   );
   buildRackModule(
@@ -3450,7 +3631,7 @@ function buildRack() {
     shelf2Y - RACK_U * 0.72,
     0.116,
     RACK_U * 1.35,
-    rackCardLabel("duw", "DUW 30 01"),
+    slotBadge("duw", "CAPACITY"),
     moduleZ
   );
   buildRackModule(
@@ -3459,7 +3640,7 @@ function buildRack() {
     shelf2Y - RACK_U * 0.72,
     0.09,
     RACK_U * 1.35,
-    "SCU",
+    slotBadge("scu", "SUPERVISOR"),
     moduleZ,
     MAT.steel
   );
@@ -3469,7 +3650,7 @@ function buildRack() {
     shelf2Y - RACK_U * 0.72,
     0.088,
     RACK_U * 1.35,
-    "SHU",
+    slotBadge("shu", "BUS HUB"),
     moduleZ,
     MAT.steel
   );
@@ -3479,7 +3660,7 @@ function buildRack() {
     shelf2Y - RACK_U * 0.72,
     0.08,
     RACK_U * 1.35,
-    "SAU3",
+    slotBadge("sau", "ALARM I/O"),
     moduleZ,
     MAT.steel
   );
@@ -3515,7 +3696,7 @@ function buildRack() {
     shelf4Y + RACK_U,
     0.218,
     RACK_U * 0.88,
-    rackCardLabel("router", "ROUTER 6471 · 30 Gbps"),
+    `${slotBadge("router", "ROUTER")} · 30 Gbps`,
     moduleZ,
     MAT.blue
   );
@@ -3525,7 +3706,7 @@ function buildRack() {
     shelf4Y + RACK_U,
     0.218,
     RACK_U * 0.88,
-    rackCardLabel("tdm", "TDM 1001 · 8 × E1"),
+    `${slotBadge("tdm", "TDM")} · 8 × E1`,
     moduleZ,
     MAT.steel
   );
@@ -3535,7 +3716,7 @@ function buildRack() {
     shelf4Y - RACK_U * 0.85,
     0.46,
     RACK_U * 1.55,
-    rackCardLabel("amm", "MINI-LINK · AMM 2P / 6P"),
+    slotBadge("amm", "MICROWAVE"),
     moduleZ,
     MAT.steel
   );
@@ -3543,7 +3724,16 @@ function buildRack() {
   tdm.userData.ports = { yellow: "TDM Port 1B" };
 
   const ovpX = w / 2 + 0.13;
-  const ovp = buildRackModule("ovp", ovpX, 1.28, 0.19, 0.24, "OVP · SURGE", moduleZ, MAT.orange);
+  const ovp = buildRackModule(
+    "ovp",
+    ovpX,
+    1.28,
+    0.19,
+    0.24,
+    slotBadge("ovp", "SURGE"),
+    moduleZ,
+    MAT.orange
+  );
   rackVisuals.stationPoints.ovp = V3(ovpX, 1.28, moduleZ + RACK_FRONT_Z);
   ovp.userData.station = 1;
 
@@ -3900,7 +4090,7 @@ function buildMicrowaveCabling(_calc) {
   mwRegister(primaryPath || cabling, {
     id: "mw-coax",
     mwKind: "coax",
-    title: "MINI-LINK IF Coaxial Cable · Ø10 mm",
+    title: "Radio IF Coaxial Cable · Ø10 mm",
     focusSize: 5,
   });
   const ground = new T.Group();
@@ -3937,7 +4127,7 @@ function buildMicrowave() {
   microwaveVisuals.root = root;
   if (transmissionSceneMode() === "CELLULAR") return;
   const calc = calculateMicrowave();
-  const primaryY = Math.max(1.4, structureTop.y - (calc.dishCount === 2 ? 0.7 : 1.7));
+  const primaryY = primaryDishY(calc.dishCount);
   buildMicrowaveDish(0, primaryY, calc);
   if (calc.dishCount === 2) {
     const secondaryY = primaryY - st.microwave.spacing;
@@ -4394,6 +4584,9 @@ function buildLaunchFX() {
   });
 }
 
+// Telecom return-loss acceptance limit used by every RF readout.
+const RF_VSWR_LIMIT = 1.32;
+
 function calculateSweep(sectorIndex = st.cellular.sector) {
   const fault = st.cellular.fault;
   const points = [];
@@ -4406,14 +4599,19 @@ function calculateSweep(sectorIndex = st.cellular.sector) {
     const spike = fault ? 1.13 * Math.exp(-0.5 * Math.pow((distance - 21.3) / 0.18, 2)) : 0;
     points.push({ distance, vswr: distance === 21.3 && fault ? 2.27 : baseline + spike });
   }
+  const peak = points.reduce(
+    (worst, point) => (point.vswr > worst.vswr ? point : worst),
+    points[0]
+  );
   return {
     sector: sectorIndex,
     fault,
     points,
-    nominal: fault ? 2.27 : 1.14,
+    peak,
+    nominal: 1.14,
     pass: !fault,
-    faultDistance: fault ? 21.3 : null,
-    max: fault ? 2.27 : Math.max(...points.map((point) => point.vswr)),
+    faultDistance: fault ? round(peak.distance, 1) : null,
+    max: round(peak.vswr, 3),
   };
 }
 
@@ -4731,8 +4929,9 @@ function isPowerSelection() {
 }
 
 function clearSelection() {
+  // Clearing the 3D selection only drops the highlight; the user stays in the
+  // step they were working in (audit 9.6 #58).
   st.selectedId = null;
-  if (!isRackMode() && !isTransmissionMode() && st.masterStep !== 5) st.masterStep = 1;
   updateSelection();
   renderDrawer();
 }
@@ -4824,7 +5023,7 @@ function inspectorData(data) {
         description:
           "Horizontal diesel vessel on steel cradles inside a concrete environmental containment berm.",
         fields: [
-          ["Usable capacity", "5,000 L nominal"],
+          ["Usable capacity", "1,000 L nominal"],
           ["Containment", "≥ 110% volume"],
           ["Level sensor", "Float port · Alarm #7"],
           ["Fill", "Lockable raised fill pipe"],
@@ -5001,12 +5200,12 @@ const POWER_CONTENT = {
   },
   generator: {
     title: "Standby Diesel Generator & Bulk Fuel Tank",
-    what: "An industrial combustion engine coupled to an AC alternator, fed by a 1,000L external fuel tank.",
+    what: "An industrial combustion engine coupled to an AC alternator, fed by a 1,000 L external fuel tank.",
     does: "It starts automatically after a mains failure, stabilizes its voltage and frequency, then accepts the site load through the ATS. Its 12V battery powers the starter motor.",
     why: "In remote areas with zero city power, two generators alternate 12 hours on / 12 hours off so technicians can perform oil changes without taking the tower down.",
   },
   fuel: {
-    title: "1,000L Bulk Diesel Fuel Tank",
+    title: "1,000 L Bulk Diesel Fuel Tank",
     what: "The external diesel reserve feeding the generator through a protected fuel line.",
     does: "It stores fuel inside a concrete containment berm. A float port watches the level and raises Alarm #7 when fuel runs low.",
     why: "Long outages require stored energy on site. The live fuel estimate tells technicians when refueling must be scheduled.",
@@ -5173,11 +5372,22 @@ function sourceModeControls() {
   </div>`;
 }
 
+// The ATS controller type is fixed by the installed panel, not a user option.
+// It is described instead of being selectable (audit 9.3).
+const ATS_MODE_TEXT = {
+  CLASSIC_RELAY: {
+    label: "Classic relay",
+    detail: "Analog timers · electromechanical control",
+  },
+  DIGITAL_PLC: {
+    label: "Digital PLC",
+    detail: "Programmable logic · automatic generator crank",
+  },
+};
+
 function atsControls() {
-  return `${sourceModeControls()}<div class="section-label">ATS controller & interlock</div><div class="option-grid" style="grid-template-columns:1fr 1fr">
-    <button class="option ${st.power.atsMode === "CLASSIC_RELAY" ? "active" : ""}" data-action="ats-mode" data-value="CLASSIC_RELAY">Classic relay<small>Analog timers · electromechanical control</small></button>
-    <button class="option ${st.power.atsMode === "DIGITAL_PLC" ? "active" : ""}" data-action="ats-mode" data-value="DIGITAL_PLC">Digital PLC<small>Programmable logic · automatic generator crank</small></button>
-  </div><p class="power-note">Three inputs, one output. Motorized contactors are mechanically and electrically interlocked; the simulator permits only one closed AC source at any instant.</p>`;
+  const mode = ATS_MODE_TEXT[st.power.atsMode] || ATS_MODE_TEXT.DIGITAL_PLC;
+  return `${sourceModeControls()}<div class="section-label">ATS controller & interlock</div><div class="read-only-row"><strong>${mode.label}</strong><small>${mode.detail}</small></div><p class="power-note">Three inputs, one output. Motorized contactors are mechanically and electrically interlocked; the simulator permits only one closed AC source at any instant. The controller type is part of the installed panel and is not a user-selectable option.</p>`;
 }
 
 function rangeProgress(value, min, max) {
@@ -5280,7 +5490,7 @@ function renderPowerSpecs() {
         ["GRID CONTACTOR", powerSim.activeSource === "GRID" ? "CLOSED" : "OPEN"],
         ["GEN 1 CONTACTOR", powerSim.activeSource === "GEN1" ? "CLOSED" : "OPEN"],
         ["GEN 2 CONTACTOR", powerSim.activeSource === "GEN2" ? "CLOSED" : "OPEN"],
-        ["CONTROL MODE", st.power.atsMode],
+        ["CONTROL MODE", (ATS_MODE_TEXT[st.power.atsMode] || ATS_MODE_TEXT.DIGITAL_PLC).label],
         ["AC TRANSFER", "15.0 s stabilization"],
         ["BATTERY BRIDGE", "0.000 ms"],
       ],
@@ -5482,8 +5692,8 @@ function renderRackMetrics() {
 function renderRackActions() {
   const rack = calculateRack();
   return `<div class="rack-actions">
-    <button class="rack-action" data-action="rack-patch" aria-label="Patch Yellow Cable" ${rack.patchReady ? "" : 'disabled title="Install both Router 6471 and TDM 1001 first"'}>[ Connect Router to TDM Cable ]</button>
-    <button class="rack-action alarm" data-action="rack-trace" aria-label="Trace Alarm Highway" ${rack.alarmPathReady ? "" : 'disabled title="Install OVP, SAU3, SCU, SHU and DUG 20 first"'}>[ Trace External Alarm Path ]</button>
+    <button class="rack-action" data-action="rack-patch" aria-label="Patch Yellow Cable" ${rack.patchReady ? "" : `disabled title="Install ${escapeHTML(slotName("router"))} and ${escapeHTML(slotName("tdm"))} first"`}>[ Connect Router to TDM Cable ]</button>
+    <button class="rack-action alarm" data-action="rack-trace" aria-label="Trace Alarm Highway" ${rack.alarmPathReady ? "" : `disabled title="${escapeHTML(alarmPathBlockedReason())}"`}>[ Trace External Alarm Path ]</button>
   </div>`;
 }
 
@@ -5492,17 +5702,32 @@ function renderRackActionStatus() {
     ? `<div class="rack-link-status ${rackSim.patchProgress >= 1 ? "up" : ""}" data-live="rack-link">${rackSim.patchProgress >= 1 ? "Circuit Emulation Link UP (8x E1 lines active for 2G voice)." : "PATCHING YELLOW ETHERNET · ROUTER PORT 2 → TDM PORT 1B…"}</div>`
     : "";
   const alarm = rackSim.alarmBadge
-    ? `<div class="alarm-infographic"><strong>Alarm highway traced to the NOC</strong><p>Dry contacts from door, fuel, and generator are surge-protected by OVP, digitized by SAU, processed by SCU, routed via SHU, and reported by the Master DUG to the NOC.</p><div class="alarm-route">OVP BOX → SAU3 → SCU → SHU → MASTER DUG 20</div></div>`
+    ? `<div class="alarm-infographic"><strong>Alarm highway traced to the NOC</strong><p>Dry contacts from door, fuel, and generator are surge-protected, digitized, processed by the environmental supervisor, routed via the enclosure bus hub, and reported by the master card to the NOC.</p><div class="alarm-route">${alarmPathRoute()}</div></div>`
     : "";
   return `${link}${alarm}`;
 }
 
+// Radio shelf, power shelf and battery tray are structural parts of the
+// cabinet: they are never removable, so they are tagged instead of looking like
+// an install/remove choice (audit 9.2 #13).
+function isAlwaysFittedSlot(key) {
+  return !Object.prototype.hasOwnProperty.call(RACK_SLOT_POWER, key);
+}
+
 function rackSlotButton(key, label, detail) {
   if (!isRackSlotCurated(key)) return "";
-  const installed = Object.prototype.hasOwnProperty.call(st.rack.slots, key)
-    ? st.rack.slots[key]
-    : true;
-  return `<button class="rack-slot ${installed ? "installed" : "empty"} ${selectedRackKey() === key ? "active" : ""}" data-action="rack-select" data-value="rack-${key}">${label}<small>${installed ? detail : `EMPTY SLOT · ${detail}`}</small></button>`;
+  const alwaysFitted = isAlwaysFittedSlot(key);
+  const installed = alwaysFitted
+    ? true
+    : Object.prototype.hasOwnProperty.call(st.rack.slots, key)
+      ? st.rack.slots[key]
+      : true;
+  const tag = alwaysFitted
+    ? '<em class="rack-slot-tag">ALWAYS FITTED</em>'
+    : installed
+      ? ""
+      : '<em class="rack-slot-tag empty">EMPTY SLOT</em>';
+  return `<button class="rack-slot ${installed ? "installed" : "empty"} ${selectedRackKey() === key ? "active" : ""}" data-action="rack-select" data-value="rack-${key}">${label}${tag}<small>${installed ? detail : `EMPTY SLOT · ${detail}`}</small></button>`;
 }
 
 function renderRackElevation() {
@@ -5510,12 +5735,12 @@ function renderRackElevation() {
   return `<div class="section-label">Interactive 19-inch rack elevation <span class="tag">1U = 44.45 mm</span></div>
   <div class="rack-elevation">
     <div class="rack-elevation-head">${housing.vendor} ${housing.model} · REAL-WORLD VERTICAL ALLOCATION</div>
-    <div class="rack-shelf" style="--u:1"><div class="rack-shelf-label"><strong>TOP 1U</strong>FAN UNIT</div><div class="rack-slots">${rackSlotButton("fau", "FAU · Fan Unit", "4 fans · top exhaust")}</div></div>
-    <div class="rack-shelf" style="--u:6"><div class="rack-shelf-label"><strong>SHELF 1 · 6U</strong>RADIO SHELF</div><div class="rack-slots">${rackSlotButton("radio", "RUS / RUG / RUW", `${st.rack.radioCount} of 12 radio positions populated`)}</div></div>
-    <div class="rack-shelf" style="--u:3"><div class="rack-shelf-label"><strong>SHELF 2 · 3U</strong>DIGITAL · 6 SLOTS</div><div class="rack-slots">${rackSlotButton("baseband", smartProfile().labels.baseband || "Baseband 6630", "1U · digital baseband · optical")}${rackSlotButton("dug", smartProfile().labels.dug || "DUG 20 01", "Curated control / voice card")}${rackSlotButton("duw", smartProfile().labels.duw || "DUW 30 01", "Curated capacity card")}${rackSlotButton("scu", "SCU", "Fan + environment")}${rackSlotButton("shu", "SHU", "EC-Bus support hub")}${rackSlotButton("sau", "SAU3", "6 in / 3 out alarm digitizer")}</div></div>
-    <div class="rack-shelf" style="--u:3"><div class="rack-shelf-label"><strong>SHELF 3 · 3U</strong>POWER SHELF</div><div class="rack-slots">${rackSlotButton("power-shelf", "PCF · PCU · PSU · PDU · PFU · BFU", "Phase 2 protected -48V DC shelf")}</div></div>
-    <div class="rack-shelf" style="--u:4"><div class="rack-shelf-label"><strong>SHELF 4 · 4U</strong>TRANSMISSION</div><div class="rack-slots">${rackSlotButton("router", smartProfile().labels.router || "Router 6471", "1U half-width · IP backhaul")}${rackSlotButton("tdm", smartProfile().labels.tdm || "TDM 1001", "1U half-width · 8 × E1")}${rackSlotButton("amm", smartProfile().labels.amm || "MINI-LINK AMM", "Curated microwave backhaul")}</div></div>
-    <div class="rack-shelf" style="--u:4"><div class="rack-shelf-label"><strong>BASE TRAY</strong>BATTERY + MGB</div><div class="rack-slots">${rackSlotButton("battery-tray", "4 × 12V VRLA + MGB", `${st.power.batteryStrings} parallel strings · master earth`)}</div></div>
+    <div class="rack-shelf" style="--u:1"><div class="rack-shelf-label"><strong>TOP 1U</strong>FAN UNIT</div><div class="rack-slots">${rackSlotButton("fau", slotName("fau"), "4 fans · top exhaust")}</div></div>
+    <div class="rack-shelf" style="--u:6"><div class="rack-shelf-label"><strong>SHELF 1 · 6U</strong>RADIO SHELF</div><div class="rack-slots">${rackSlotButton("radio", slotName("radio"), `${st.rack.radioCount} of 12 radio positions populated`)}</div></div>
+    <div class="rack-shelf" style="--u:3"><div class="rack-shelf-label"><strong>SHELF 2 · 3U</strong>DIGITAL · 6 SLOTS</div><div class="rack-slots">${rackSlotButton("baseband", slotName("baseband"), "1U · digital baseband · optical")}${rackSlotButton("dug", slotName("dug"), "Curated control / voice card")}${rackSlotButton("duw", slotName("duw"), "Curated capacity card")}${rackSlotButton("scu", slotName("scu"), "Fan + environment")}${rackSlotButton("shu", slotName("shu"), "Cabinet bus support hub")}${rackSlotButton("sau", slotName("sau"), "6 in / 3 out alarm digitizer")}</div></div>
+    <div class="rack-shelf" style="--u:3"><div class="rack-shelf-label"><strong>SHELF 3 · 3U</strong>POWER SHELF</div><div class="rack-slots">${rackSlotButton("power-shelf", slotName("power-shelf"), "Phase 2 protected -48V DC shelf")}</div></div>
+    <div class="rack-shelf" style="--u:4"><div class="rack-shelf-label"><strong>SHELF 4 · 4U</strong>TRANSMISSION</div><div class="rack-slots">${rackSlotButton("router", slotName("router"), "1U half-width · IP backhaul")}${rackSlotButton("tdm", slotName("tdm"), "1U half-width · 8 × E1")}${rackSlotButton("amm", slotName("amm"), "Curated microwave backhaul")}</div></div>
+    <div class="rack-shelf" style="--u:4"><div class="rack-shelf-label"><strong>BASE TRAY</strong>BATTERY + MGB</div><div class="rack-slots">${rackSlotButton("battery-tray", slotName("battery-tray"), `${st.power.batteryStrings} parallel strings · master earth`)}</div></div>
   </div>`;
 }
 
@@ -5536,17 +5761,17 @@ function renderRackOverview() {
 function renderRackConfigure() {
   const housing = rackHousing();
   const labels = {
-    fau: "FAU fan unit",
-    baseband: smartProfile().labels.baseband || "Baseband 6630",
-    dug: smartProfile().labels.dug || "DUG 20 01",
-    duw: smartProfile().labels.duw || "DUW 30 01",
-    scu: "SCU supervisor",
-    shu: "SHU support hub",
-    sau: "SAU3 alarm digitizer",
-    router: smartProfile().labels.router || "Router 6471",
-    tdm: "TDM 1001",
-    amm: smartProfile().labels.amm || "MINI-LINK AMM",
-    ovp: "OVP protection box",
+    fau: slotName("fau"),
+    baseband: slotName("baseband"),
+    dug: slotName("dug"),
+    duw: slotName("duw"),
+    scu: slotName("scu"),
+    shu: slotName("shu"),
+    sau: slotName("sau"),
+    router: slotName("router"),
+    tdm: slotName("tdm"),
+    amm: slotName("amm"),
+    ovp: slotName("ovp"),
   };
   return `${renderRackNavigator()}
     <div class="section-label">Vendor ecosystem <span class="tag">STEP 02 ONLY</span></div>
@@ -5554,13 +5779,13 @@ function renderRackConfigure() {
     <p class="rack-note">Active housing: <strong>${housing.model}</strong> · ${housing.description}</p>
     <div class="section-label">Installation & access</div>
     <div class="rack-door-controls">
-      <button class="option ${st.rack.location === "INDOOR" ? "active" : ""}" data-action="rack-location" data-value="INDOOR" ${st.env === "URBAN_ROOFTOP" ? 'disabled title="Urban rooftop has no indoor shelter; outdoor IP55 is mandatory"' : ""}>Indoor shelter<small>${st.env === "URBAN_ROOFTOP" ? "Blocked · no shelter on rooftop" : "RBS 6201 / indoor modular rack"}</small></button>
-      <button class="option ${st.rack.location === "OUTDOOR" ? "active" : ""}" data-action="rack-location" data-value="OUTDOOR">Outdoor IP55<small>RBS 6102 / BTS3900A · double door</small></button>
+      <button class="option ${st.rack.location === "INDOOR" ? "active" : ""}" data-action="rack-location" data-value="INDOOR" ${st.env === "URBAN_ROOFTOP" ? 'disabled title="Urban rooftop has no indoor shelter; outdoor IP55 is mandatory"' : ""}>Indoor shelter<small>${st.env === "URBAN_ROOFTOP" ? "Blocked · no shelter on rooftop" : `${rackHousingModel("INDOOR")} · indoor modular rack`}</small></button>
+      <button class="option ${st.rack.location === "OUTDOOR" ? "active" : ""}" data-action="rack-location" data-value="OUTDOOR">Outdoor IP55<small>${rackHousingModel("OUTDOOR")} · double door</small></button>
       <button class="rack-action secondary" data-action="rack-door-toggle">[ ${rackSim.doorTarget > 0.5 ? "Close" : "Open"} Cabinet Door ]</button>
       <button class="rack-action secondary" data-action="rack-select" data-value="rack-cabinet">[ Focus Complete Cabinet ]</button>
     </div>
     <div class="section-label">Radio shelf population</div>
-    <div class="control-card rack-control"><div class="control-row"><label for="rack-radio-count">RUS / RUG / RUW positions</label><output class="control-value" id="rack-radio-count-value">${st.rack.radioCount} / 12</output></div><input type="range" id="rack-radio-count" data-rack-input="radio-count" min="0" max="12" step="1" value="${st.rack.radioCount}" style="--range-progress:${rangeProgress(st.rack.radioCount, 0, 12)}%"><div class="range-limits"><span>EMPTY 6U SHELF</span><span>12 RADIO UNITS</span></div></div>
+    <div class="control-card rack-control"><div class="control-row"><label for="rack-radio-count">${escapeHTML(slotName("radio"))} positions</label><output class="control-value" id="rack-radio-count-value">${st.rack.radioCount} / 12</output></div><input type="range" id="rack-radio-count" data-rack-input="radio-count" min="0" max="12" step="1" value="${st.rack.radioCount}" style="--range-progress:${rangeProgress(st.rack.radioCount, 0, 12)}%"><div class="range-limits"><span>EMPTY 6U SHELF</span><span>12 RADIO UNITS</span></div></div>
     <div class="section-label">Slot management <span class="tag">LIVE kW / HOURS / Gbps</span></div>
     <div class="slot-manager">${Object.entries(labels)
       .filter(([key]) => isRackSlotCurated(key))
@@ -5618,7 +5843,7 @@ function renderRackSpecs() {
       fields = [
         ["POSITION", "Top 1U"],
         ["FANS", "4 × top exhaust"],
-        ["CONTROL", "SCU temperature supervision"],
+        ["CONTROL", `${slotName("scu")} · temperature supervision`],
         ["DC INPUT", "40 W"],
       ];
     else if (key === "radio")
@@ -5626,7 +5851,7 @@ function renderRackSpecs() {
         ["POSITION", "Shelf 1 · 6U"],
         ["CAPACITY", "Up to 12 RUs"],
         ["POPULATED", `${st.rack.radioCount} / 12`],
-        ["TYPES", "RUS / RUG / RUW"],
+        ["TYPES", slotName("radio")],
       ];
     else if (key === "power-shelf")
       fields = [
@@ -5649,7 +5874,7 @@ function renderRackSpecs() {
     key === "router" || key === "tdm"
       ? "The yellow patch lead connects Router Port 2 to TDM Port 1B. Both link LEDs turn green only after the physical cable animation completes."
       : key === "ovp" || key === "sau" || key === "scu" || key === "shu" || key === "dug"
-        ? "Alarm highway order: OVP Box → SAU3 → SCU → SHU → Master DUG 20 → NOC."
+        ? `Alarm highway order: ${alarmPathRoute()} → NOC.`
         : "Procedural 19-inch rack component with live slot state and raycast inspection."
   );
   return `${renderRackNavigator()}<div class="spec-grid">${common}${specific}</div>${renderRackMetrics()}${renderRackActionStatus()}${renderRackActions()}`;
@@ -5701,7 +5926,7 @@ const MW_CONTENT = {
   },
   coax: {
     title: "Radio IF Coaxial Cable · Ø10 mm",
-    what: "The black radio cable running from the cabinet's MINI-LINK AMM or Router 6471 up the tower ladder.",
+    what: `The black radio cable running from the cabinet's ${slotName("amm")} or ${slotName("router")} up the tower ladder.`,
     does: "It carries protected IF signals and DC power between the indoor transmission cards and the outdoor radio, with a grounding kit bonded downward into the steel mast.",
   },
   ground: {
@@ -5812,10 +6037,11 @@ function renderCellularHero() {
 function renderCellularControls() {
   const index = st.cellular.sector,
     sector = st.cellular.sectors[index];
-  return `<div class="section-label">Sector ${index + 1} steering & on-air state <span class="tag">120° RING</span></div><button class="rf-action ${sector.onAir ? "active" : ""}" data-action="rf-onair" aria-pressed="${sector.onAir}">[ Sector ${index + 1} ON-AIR: ${sector.onAir ? "ENABLED" : "MUTED"} ]</button><div class="control-card rf-control"><div class="control-row"><label for="rf-azimuth">Azimuth</label><output class="control-value" id="rf-azimuth-value">${sector.azimuth.toFixed(1)}°</output></div><input type="range" id="rf-azimuth" data-rf-input="azimuth" min="0" max="360" step="0.1" value="${sector.azimuth}" style="--range-progress:${rangeProgress(sector.azimuth, 0, 360)}%"><div class="range-limits"><span>0°</span><span>360°</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-downtilt">Electrical Downtilt (RET)</label><output class="control-value" id="rf-downtilt-value">${sector.downtilt.toFixed(1)}°</output></div><input type="range" id="rf-downtilt" data-rf-input="downtilt" min="0" max="10" step="0.1" value="${sector.downtilt}" style="--range-progress:${rangeProgress(sector.downtilt, 0, 10)}%"><div class="range-limits"><span>0° · HORIZON</span><span>10° · GROUND</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-tx-power">TX Power</label><output class="control-value" id="rf-tx-value">${sector.txPower.toFixed(0)} dBm · ${txPowerWatts(sector.txPower)} W</output></div><input type="range" id="rf-tx-power" data-rf-input="txPower" min="43" max="49" step="1" value="${sector.txPower}" style="--range-progress:${rangeProgress(sector.txPower, 43, 49)}%"><div class="range-limits"><span>43 dBm</span><span>49 dBm · 80 W</span></div></div><div class="section-label">Channel bandwidth</div><div class="rf-bandwidth">${[20, 40, 100].map((bandwidth) => `<button class="mw-pill ${sector.bandwidth === bandwidth ? "active" : ""}" data-action="rf-bandwidth" data-value="${bandwidth}">${bandwidth} MHz</button>`).join("")}</div><p class="rf-explanation">RET tilts only the translucent RF radiation volume downward; the physical panel stays fixed on its upper-ring mount. Horizontal beamwidth: 65° · vertical beamwidth: 12°.</p>`;
+  return `<div class="section-label">Sector ${index + 1} steering & on-air state <span class="tag">120° RING</span></div><button class="rf-action ${sector.onAir ? "active" : ""}" data-action="rf-onair" aria-pressed="${sector.onAir}">[ Sector ${index + 1} ON-AIR: ${sector.onAir ? "ENABLED" : "MUTED"} ]</button><div class="control-card rf-control"><div class="control-row"><label for="rf-azimuth">Azimuth</label><output class="control-value" id="rf-azimuth-value">${sector.azimuth.toFixed(1)}°</output></div><input type="range" id="rf-azimuth" data-rf-input="azimuth" min="0" max="360" step="0.1" value="${sector.azimuth}" style="--range-progress:${rangeProgress(sector.azimuth, 0, 360)}%"><div class="range-limits"><span>0°</span><span>360°</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-downtilt">Electrical Downtilt (RET)</label><output class="control-value" id="rf-downtilt-value">${sector.downtilt.toFixed(1)}°</output></div><input type="range" id="rf-downtilt" data-rf-input="downtilt" min="0" max="10" step="0.1" value="${sector.downtilt}" style="--range-progress:${rangeProgress(sector.downtilt, 0, 10)}%"><div class="range-limits"><span>0° · HORIZON</span><span>10° · GROUND</span></div></div><div class="control-card rf-control"><div class="control-row"><label for="rf-tx-power">TX Power</label><output class="control-value" id="rf-tx-value">${sector.txPower.toFixed(0)} dBm · ${txPowerWatts(sector.txPower)} W</output></div><input type="range" id="rf-tx-power" data-rf-input="txPower" min="43" max="49" step="1" value="${sector.txPower}" style="--range-progress:${rangeProgress(sector.txPower, 43, 49)}%"><div class="range-limits"><span>43 dBm</span><span>49 dBm · 80 W</span></div></div><div class="section-label">Channel bandwidth <span class="tag">DISPLAY ONLY</span></div><div class="rf-bandwidth">${[20, 40, 100].map((bandwidth) => `<button class="mw-pill ${sector.bandwidth === bandwidth ? "active" : ""}" data-action="rf-bandwidth" data-value="${bandwidth}">${bandwidth} MHz</button>`).join("")}</div><p class="rf-explanation">Channel bandwidth is reported to the NOC and the vendor CLI but does not change the simulated DC load or coverage. RET tilts only the translucent RF radiation volume downward; the physical panel stays fixed on its upper-ring mount. Horizontal beamwidth: 65° · vertical beamwidth: 12°.</p>`;
 }
 
 function sweepGraph(result) {
+  const faultDistance = result && result.fault ? result.faultDistance : null;
   const width = 640,
     height = 260,
     left = 46,
@@ -5847,7 +6073,7 @@ function sweepGraph(result) {
         .join(" ")
     : "";
   const color = result && result.fault ? "#DC2626" : "#059669";
-  return `<svg class="rf-graph" id="rf-sweep-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive reflection versus distance graph from zero to sixty meters"><title>Site Master VSWR and distance-to-fault sweep</title>${grid}${distances}<text x="8" y="12" font-size="9" fill="#64748B">VSWR</text><text x="${width - right}" y="${height - 13}" text-anchor="end" font-size="9" fill="#64748B">DISTANCE</text><line x1="${left}" y1="${y(1.32)}" x2="${width - right}" y2="${y(1.32)}" stroke="#D97706" stroke-dasharray="5 4"/><text x="${width - right - 4}" y="${y(1.32) - 5}" text-anchor="end" font-size="9" fill="#92400E">LIMIT 1.32</text>${path ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>` : `<text x="${left + plotW / 2}" y="${top + plotH / 2}" text-anchor="middle" font-size="12" fill="#64748B">RUN SWEEP TO ACQUIRE DTF TRACE</text>`}${result && result.fault ? `<line x1="${x(21.3)}" y1="${top}" x2="${x(21.3)}" y2="${height - bottom}" stroke="#DC2626" stroke-dasharray="3 3"/><text x="${x(21.3) + 5}" y="${top + 13}" font-size="10" fill="#B91C1C">21.3m FAULT</text>` : ""}<g id="rf-cursor" style="display:none" pointer-events="none"><line id="rf-cursor-line" y1="${top}" y2="${height - bottom}" stroke="#2563EB"/><circle id="rf-cursor-dot" r="4" fill="#2563EB"/></g><rect id="rf-graph-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" fill="transparent" data-rf-graph="true"/></svg>`;
+  return `<svg class="rf-graph" id="rf-sweep-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive reflection versus distance graph from zero to sixty meters"><title>Site Master VSWR and distance-to-fault sweep</title>${grid}${distances}<text x="8" y="12" font-size="9" fill="#64748B">VSWR</text><text x="${width - right}" y="${height - 13}" text-anchor="end" font-size="9" fill="#64748B">DISTANCE</text><line x1="${left}" y1="${y(1.32)}" x2="${width - right}" y2="${y(1.32)}" stroke="#D97706" stroke-dasharray="5 4"/><text x="${width - right - 4}" y="${y(1.32) - 5}" text-anchor="end" font-size="9" fill="#92400E">LIMIT 1.32</text>${path ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>` : `<text x="${left + plotW / 2}" y="${top + plotH / 2}" text-anchor="middle" font-size="12" fill="#64748B">RUN SWEEP TO ACQUIRE DTF TRACE</text>`}${faultDistance !== null ? `<line x1="${x(faultDistance)}" y1="${top}" x2="${x(faultDistance)}" y2="${height - bottom}" stroke="#DC2626" stroke-dasharray="3 3"/><text x="${x(faultDistance) + 5}" y="${top + 13}" font-size="10" fill="#B91C1C">${faultDistance.toFixed(1)}m FAULT</text>` : ""}<g id="rf-cursor" style="display:none" pointer-events="none"><line id="rf-cursor-line" y1="${top}" y2="${height - bottom}" stroke="#2563EB"/><circle id="rf-cursor-dot" r="4" fill="#2563EB"/></g><rect id="rf-graph-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" fill="transparent" data-rf-graph="true"/></svg>`;
 }
 
 function renderSiteMaster() {
@@ -5859,10 +6085,10 @@ function renderSiteMaster() {
     ? "SWEEPING CABLE & ANTENNA…"
     : result
       ? result.fault
-        ? "VSWR: 2.27 [FAIL - High Reflection!]"
-        : "VSWR: 1.14 [PASS]"
+        ? `VSWR: ${result.max.toFixed(2)} @ ${result.faultDistance.toFixed(1)} m [FAIL - High Reflection!]`
+        : `VSWR: ${result.max.toFixed(2)} [PASS]`
       : "VSWR / DTF · SWEEP REQUIRED";
-  return `<section class="rf-testbench" aria-label="Interactive RF Testbench"><div class="rf-testbench-head"><h3>Virtual Site Master</h3><span>VSWR + DTF · 0–60m</span></div><button class="rf-action primary" data-action="rf-run-sweep" ${running ? "disabled" : ""}>[ Run RF Cable & Antenna Sweep ]</button><button class="rf-action ${st.cellular.fault ? "fault" : ""}" data-action="rf-fault" aria-pressed="${st.cellular.fault}">[ Simulate Waterlogged Connector / Cable Kink ]</button><div class="rf-sweep-badge ${running ? "running" : result ? (result.pass ? "pass" : "fail") : ""}" data-live="rf-sweep-badge">${badge}</div><div class="rf-progress" id="rf-sweep-progress" style="--sweep-progress:${running ? "0%" : result ? "100%" : "0%"}"><span></span></div>${sweepGraph(result)}<div class="rf-cursor-readout" id="rf-cursor-readout">${result ? "Move over the SVG trace to inspect distance and VSWR." : "The interactive trace appears after the sweep."}</div><p class="rf-explanation ${result && result.fault ? "fault" : ""}">${result ? (result.fault ? "Impedance mismatch detected at 21.3m. Possible water ingress or damaged connector. Risk of radio PA thermal shutdown." : "Feeder and connectors are healthy. Reflection remains below 1.20 and meets the telecom standard VSWR ≤ 1.32.") : st.cellular.fault ? "Fault scenario armed. Run the sweep to locate the impedance mismatch by distance-to-fault analysis." : "Normal scenario armed. The analyzer will sweep the selected sector's feeder and antenna."}</p><button class="rf-action" data-action="rf-ai-diagnostic">[ AI Waveform Diagnostic ]</button>${diagnostic ? `<div class="rf-ai-diagnostic ${diagnostic.fault ? "fault" : ""}" id="rf-ai-result" role="status"><strong>${diagnostic.fault ? "NEURAL RF CLASSIFIER · FAULT" : "NEURAL RF CLASSIFIER · HEALTHY"}</strong><br>Confidence: ${diagnostic.confidence.toFixed(1)}%<br>${diagnostic.message}<small>LOCAL 601-POINT INFERENCE · ${diagnostic.discontinuities} DISCONTINUITIES · NO NETWORK OR MODEL DOWNLOAD</small></div>` : ""}<button class="rf-action" data-action="rf-inspect-master">[ Inspect Handheld Site Master ]</button></section>`;
+  return `<section class="rf-testbench" aria-label="Interactive RF Testbench"><div class="rf-testbench-head"><h3>Virtual Site Master</h3><span>VSWR + DTF · 0–60m</span></div><button class="rf-action primary" data-action="rf-run-sweep" ${running ? "disabled" : ""}>[ Run RF Cable & Antenna Sweep ]</button><button class="rf-action ${st.cellular.fault ? "fault" : ""}" data-action="rf-fault" aria-pressed="${st.cellular.fault}">[ Simulate Waterlogged Connector / Cable Kink ]</button><div class="rf-sweep-badge ${running ? "running" : result ? (result.pass ? "pass" : "fail") : ""}" data-live="rf-sweep-badge">${badge}</div><div class="rf-progress" id="rf-sweep-progress" style="--sweep-progress:${running ? "0%" : result ? "100%" : "0%"}"><span></span></div>${sweepGraph(result)}<div class="rf-cursor-readout" id="rf-cursor-readout">${result ? "Move over the SVG trace to inspect distance and VSWR." : "The interactive trace appears after the sweep."}</div><p class="rf-explanation ${result && result.fault ? "fault" : ""}">${result ? (result.fault ? `Impedance mismatch detected at ${result.faultDistance.toFixed(1)} m. Possible water ingress or damaged connector. Risk of radio PA thermal shutdown.` : `Feeder and connectors are healthy. Peak reflection is ${result.max.toFixed(2)} and meets the telecom standard VSWR ≤ ${RF_VSWR_LIMIT.toFixed(2)}.`) : st.cellular.fault ? "Fault scenario armed. Run the sweep to locate the impedance mismatch by distance-to-fault analysis." : "Normal scenario armed. The analyzer will sweep the selected sector's feeder and antenna."}</p><button class="rf-action" data-action="rf-ai-diagnostic">[ AI Waveform Diagnostic ]</button>${diagnostic ? `<div class="rf-ai-diagnostic ${diagnostic.fault ? "fault" : ""}" id="rf-ai-result" role="status"><strong>${diagnostic.fault ? "NEURAL RF CLASSIFIER · FAULT" : "NEURAL RF CLASSIFIER · HEALTHY"}</strong><br>${diagnostic.fault ? `Peak contrast: ${diagnostic.contrast.toFixed(1)}% above the ${RF_VSWR_LIMIT.toFixed(2)} limit` : `Headroom: ${diagnostic.headroom.toFixed(1)}% below the ${RF_VSWR_LIMIT.toFixed(2)} limit`}<br>${diagnostic.message}<small>LOCAL 601-POINT INFERENCE · ${diagnostic.discontinuities} DISCONTINUITIES · NO NETWORK OR MODEL DOWNLOAD</small></div>` : ""}<button class="rf-action" data-action="rf-inspect-master">[ Inspect Handheld Site Master ]</button></section>`;
 }
 
 function renderCellularSpecs() {
@@ -6064,7 +6290,7 @@ function renderMicrowaveSpecs() {
   else if (kind === "coax")
     fields = [
       ["CABLE", "Black IF coax · Ø10 mm"],
-      ["INDOOR", "MINI-LINK AMM / Router 6471"],
+      ["INDOOR", `${slotName("amm")} / ${slotName("router")}`],
       ["OUTDOOR", "ODU rear radio"],
       ["GROUND", "Top feeder kit · downward mast bond"],
     ];
@@ -6174,6 +6400,37 @@ function carrierFrequency() {
   }[st.generation];
 }
 
+// Deterministic, stable-per-slot identity so the same card always reports the
+// same part number, serial and revision (audit 9.6 #51).
+function slotIdentity(key) {
+  let hash = 0x811c9dc5;
+  const text = `${st.rack.vendor}:${key}`;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return {
+    pn: `TS-${key.toUpperCase()}`,
+    sn: `${st.rack.vendor.slice(0, 2)}${String(hash % 100000).padStart(5, "0")}`,
+    rev: `R${(hash % 3) + 1}A`,
+  };
+}
+
+// Huawei BBU5900 physical slot map used by DSP BRD:;
+const HUAWEI_BOARD_SLOTS = {
+  baseband: 0,
+  duw: 1,
+  amm: 2,
+  router: 3,
+  tdm: 4,
+  dug: 6,
+  fau: 16,
+  scu: 17,
+  shu: 18,
+  sau: 19,
+  ovp: 20,
+};
+
 function installedModules() {
   return Object.keys(RACK_SLOT_POWER).filter((key) => st.rack.slots[key]);
 }
@@ -6212,9 +6469,7 @@ function ericssonCLI(command, normalized) {
   const housing = rackHousing();
   if (lower === "lt all") {
     const modules = installedModules()
-      .map(
-        (key) => `    MO Slot:${key.toUpperCase()}=${rackCardLabel(key, RACK_CONTENT[key].title)}`
-      )
+      .map((key) => `    MO Slot:${key.toUpperCase()}=${slotName(key)}`)
       .join("\n");
     const sectors = st.cellular.sectors
       .map(
@@ -6222,7 +6477,7 @@ function ericssonCLI(command, normalized) {
           `  MO Sector:${index + 1} Azimuth=${sector.azimuth.toFixed(1)}deg Tilt=${sector.downtilt.toFixed(1)}deg Tx=${sector.txPower}dBm BW=${sector.bandwidth}MHz State=${sector.onAir ? "Enabled/Active" : "Disabled"}`
       )
       .join("\n");
-    return `Managed Object Hierarchy · live 3D site scan\nSite=${ENVIRONMENTS[st.env].name} / ${TOWERS[st.tower].short} / ${st.H}m\n  MO Cabinet=${housing.vendor} ${housing.model} (${housing.ip})\n    MO Baseband=${st.rack.slots.baseband ? "Baseband 6630" : st.rack.slots.dug ? rackCardLabel("dug", "DUG 20 01") : "NOT INSTALLED"}\n${modules || "    MO Slots=EMPTY"}\n${sectors}\n  MO MicrowaveHop=${microwave.topology.label} Dish=${st.microwave.diameter.toFixed(1)}m Band=${st.microwave.frequency}GHz LockedRSL=${microwave.rsl.toFixed(1)}dBm Lock=${microwave.locked ? "LOCKED" : "UNLOCKED"} Fade=${microwave.fadeMargin.toFixed(1)}dB`;
+    return `Managed Object Hierarchy · live 3D site scan\nSite=${ENVIRONMENTS[st.env].name} / ${TOWERS[st.tower].short} / ${st.H}m\n  MO Cabinet=${housing.vendor} ${housing.model} (${housing.ip})\n    MO Baseband=${st.rack.slots.baseband ? slotName("baseband") : st.rack.slots.dug ? slotName("dug") : "NOT INSTALLED"}\n${modules || "    MO Slots=EMPTY"}\n${sectors}\n  MO MicrowaveHop=${microwave.topology.label} Dish=${st.microwave.diameter.toFixed(1)}m Band=${st.microwave.frequency}GHz LockedRSL=${microwave.rsl.toFixed(1)}dBm Lock=${microwave.locked ? "LOCKED" : "UNLOCKED"} Fade=${microwave.fadeMargin.toFixed(1)}dB`;
   }
   if (lower === "cabx") {
     const baseRpm = !st.rack.slots.fau
@@ -6235,7 +6490,7 @@ function ericssonCLI(command, normalized) {
     const sectors = [0, 1, 2]
       .map((index) => {
         const result = calculateSweep(index);
-        return `Sector ${index + 1}: VSWR=${result.nominal.toFixed(2)} Max=${result.max.toFixed(2)} ${result.max <= 1.32 ? "PASS" : "FAIL · High Reflection"}`;
+        return `Sector ${index + 1}: VSWR=${result.nominal.toFixed(2)} Max=${result.max.toFixed(2)} ${result.max <= RF_VSWR_LIMIT ? "PASS" : "FAIL · High Reflection"}`;
       })
       .join("\n");
     const fans = [0, 80, 120, 40]
@@ -6289,20 +6544,22 @@ function ericssonCLI(command, normalized) {
   if (lower === "cvls")
     return `Configuration Version Backups · ${st.terminal.cvs.length}/20\n${cvListText()}`;
   if (lower === "show port") {
-    if (!st.rack.slots.router) return "Router 6471: NOT INSTALLED · port audit unavailable";
-    return `Router 6471 · IPOS Port State\n1/1 WAN Up · 10G SFP+ · Backhaul ${microwave.locked ? "LOCKED" : "UNLOCKED"} · RSL ${microwave.rsl.toFixed(1)} dBm\n1/2 CES to TDM 1001 ${st.rack.slots.tdm ? "Up" : "Disabled"} · ${rack.patchUp ? "8x E1 Circuit Emulation UP" : "Line DOWN · yellow patch required"}\n1/3 LAN Up · ${st.rack.slots.baseband ? "Baseband 6630 connected" : st.rack.slots.dug ? "DUG 20 connected" : "No attached baseband"}`;
+    if (!st.rack.slots.router)
+      return `${slotName("router")}: NOT INSTALLED · port audit unavailable`;
+    return `${slotName("router")} · Site IP Port State\n1/1 WAN Up · 10G SFP+ · Backhaul ${microwave.locked ? "LOCKED" : "UNLOCKED"} · RSL ${microwave.rsl.toFixed(1)} dBm\n1/2 CES to ${slotName("tdm")} ${st.rack.slots.tdm ? "Up" : "Disabled"} · ${rack.patchUp ? "8x E1 Circuit Emulation UP" : "Line DOWN · yellow patch required"}\n1/3 LAN Up · ${st.rack.slots.baseband ? `${slotName("baseband")} connected` : st.rack.slots.dug ? `${slotName("dug")} connected` : "No attached baseband"}`;
   }
   if (lower === "show hardware") {
-    const rows = installedModules().map(
-      (key, index) =>
-        `${rackCardLabel(key, RACK_CONTENT[key].title)} | PN TS-${key.toUpperCase()}-6471 | SN ER${String(index + 1).padStart(5, "0")} | REV R${(index % 3) + 1}A`
-    );
-    return `Router 6471 Hardware Inventory\nChassis ${housing.model} | PN TS-${housing.model.replace(/\s+/g, "-").toUpperCase()} | SN TS-CAB-0001 | REV R1A\n${rows.join("\n") || "No installed slot modules"}`;
+    const rows = installedModules().map((key) => {
+      const id = slotIdentity(key);
+      return `${slotName(key)} | PN ${id.pn} | SN ${id.sn} | REV ${id.rev}`;
+    });
+    const chassis = slotIdentity("cabinet");
+    return `${housing.vendor} ${housing.model} Hardware Inventory\nChassis ${housing.model} | PN ${chassis.pn} | SN ${chassis.sn} | REV ${chassis.rev}\n${rows.join("\n") || "No installed slot modules"}`;
   }
   if (lower === "show system alarm")
-    return `Router 6471 Master + Attached-Unit Alarm Audit\nAttached: ${
+    return `${housing.vendor} ${housing.model} Master + Attached-Unit Alarm Audit\nAttached: ${
       installedModules()
-        .map((key) => rackCardLabel(key, RACK_CONTENT[key].title))
+        .map((key) => slotName(key))
         .join(", ") || "NONE"
     }\n${formatAlarmReport()}`;
   return null;
@@ -6316,17 +6573,13 @@ function huaweiCLI(normalized) {
   if (lower === "dsp cell:;")
     return `${echo}CELL ID  CARRIER              BANDWIDTH  OPERATIONAL STATE\n${st.cellular.sectors.map((sector, index) => `${String(index + 1).padEnd(8)} ${carrierFrequency().padEnd(20)} ${(sector.bandwidth + " MHz").padEnd(10)} ${sector.onAir ? "Enabled / Active" : "Disabled"}`).join("\n")}`;
   if (lower === "dsp brd:;") {
-    const boards = [
-      st.rack.slots.dug ? rackCardLabel("dug", "UMPT") : "EMPTY",
-      st.rack.slots.baseband ? rackCardLabel("baseband", "UBBP") : "EMPTY",
-      st.rack.slots.duw ? rackCardLabel("duw", "UBBP") : "EMPTY",
-      st.rack.slots.amm ? rackCardLabel("amm", "RTN 950A") : "EMPTY",
-      st.rack.slots.fau ? "FAN" : "EMPTY",
-      "UPEU",
-      "EMPTY",
-      "EMPTY",
-    ];
-    return `${echo}BBU5900 Board Inventory · Subrack 0\n${boards.map((board, slot) => `Slot ${slot}: ${board} | ${board === "EMPTY" ? "NOT INSTALLED" : "NORMAL"}`).join("\n")}`;
+    const boards = installedModules()
+      .map((key) => ({ slot: HUAWEI_BOARD_SLOTS[key] ?? 99, board: slotName(key) }))
+      .sort((a, b) => a.slot - b.slot);
+    return `${echo}BBU5900 Board Inventory · Subrack 0\n${
+      boards.map(({ slot, board }) => `Slot ${slot}: ${board} | NORMAL`).join("\n") ||
+      "No boards installed"
+    }`;
   }
   if (lower === "lst rru:;")
     return `${echo}RRU ID  MODEL                    HEALTH   OPTICAL CPRI\n${st.cellular.sectors.map((sector, index) => `RRU-${index + 1}  ${aauModel().padEnd(24)} ${sector.onAir ? "NORMAL" : "DISABLED"}  ${st.rack.slots.baseband && sector.onAir ? "UP" : "DOWN"}`).join("\n")}`;
@@ -6337,7 +6590,7 @@ function nokiaCLI(normalized) {
   const lower = normalized.toLowerCase();
   if (lower === "show bts status") {
     const modules = installedModules()
-      .map((key) => `${rackCardLabel(key, RACK_CONTENT[key].title)}: HEALTH=OK`)
+      .map((key) => `${slotName(key)}: HEALTH=OK`)
       .join("\n");
     const carriers = st.cellular.sectors.filter((sector) => sector.onAir).length;
     return `AirScale BTS Status · ${rackHousing().model}\n${modules || "No AirScale modules installed"}\nActive Carriers: ${carriers} / 3\nSynchronization: ${calculateMicrowave().locked ? "PTP + SyncE LOCKED" : "HOLDOVER · backhaul not locked"}\nOperational State: ${carriers ? "ENABLED" : "DISABLED"}`;
@@ -6350,9 +6603,10 @@ function cliResponse(command) {
   const normalized = command.trim().replace(/\s+/g, " ");
   const lower = normalized.toLowerCase();
   if (lower === "help")
-    return `${st.rack.vendor} commands:\n${cliCommands().join("\n")}${st.rack.vendor === "ERICSSON" ? "\ncvms <name>" : ""}\nai diagnose\n${triage.active ? "1 / 2 / 3 · guided remediation\n" : ""}clear`;
+    return `${st.rack.vendor} commands:\n${cliCommands().join("\n")}${st.rack.vendor === "ERICSSON" ? "\ncvms <name>" : ""}\nai diagnose\n${triage.active ? `1 / 2 / 3${triage.throttleBackup ? " / 4" : ""} · guided remediation\n` : ""}clear`;
   if (lower === "ai diagnose" || lower === "ai diagnosis") return runAICopilot();
-  if (triage.active && ["1", "2", "3"].includes(lower)) return applyTriageChoice(Number(lower));
+  if (triage.active && ["1", "2", "3", "4"].includes(lower))
+    return applyTriageChoice(Number(lower));
   const response =
     st.rack.vendor === "HUAWEI"
       ? huaweiCLI(normalized)
@@ -6425,7 +6679,7 @@ function renderPhase6Specs() {
   return `<div class="spec-grid">${powerSpecCard(
     "Operational launch status",
     [
-      ["SITE", launch.onAir ? "ON AIR" : "PRE-FLIGHT"],
+      ["SITE", launch.onAir ? "ON AIR" : st.onboarding.active ? "SETTING UP" : "LIVE MODEL"],
       ["ACCEPTANCE", `${audit.checks.filter((check) => check.pass).length} / 6 PASS`],
       ["TOTAL LOAD", `${power.totalLoad.toFixed(2)} kW`],
       ["BACKUP", `${power.autonomy.toFixed(1)} h`],
@@ -7010,38 +7264,47 @@ function classifyRFWaveform(result) {
   let discontinuities = 0,
     inDiscontinuity = false;
   points.forEach((point) => {
-    if (point.vswr > 1.32 && !inDiscontinuity) {
+    if (point.vswr > RF_VSWR_LIMIT && !inDiscontinuity) {
       discontinuities++;
       inDiscontinuity = true;
     }
-    if (point.vswr <= 1.32) inDiscontinuity = false;
+    if (point.vswr <= RF_VSWR_LIMIT) inDiscontinuity = false;
   });
   const peak = points.reduce(
     (worst, point) => (point.vswr > worst.vswr ? point : worst),
     points[0]
   );
-  const fault = !!source.fault || discontinuities > 0 || peak.vswr > 1.32;
-  if (fault)
+  const fault = !!source.fault || discontinuities > 0 || peak.vswr > RF_VSWR_LIMIT;
+  const vswr = round(peak.vswr, 2);
+  if (fault) {
+    // How far the worst reflection stands above the acceptance limit, expressed
+    // as a percentage of the peak. Derived from the sweep, never hard-coded.
+    const contrast = clamp(((peak.vswr - RF_VSWR_LIMIT) / peak.vswr) * 100, 0, 99.9);
+    const distance = round(peak.distance, 1);
     return {
       fault: true,
-      confidence: 96.8,
-      samples: 601,
-      vswr: 2.27,
-      distance: 21.3,
-      discontinuities: 1,
-      signature: "capacitive-shunt/water-ingress",
-      message:
-        "High-reflectance discontinuity at 21.3 m · VSWR 2.27 · capacitive-shunt/water-ingress signature. Inspect for a pinched dielectric or failed 7/16 DIN weatherproofing.",
+      contrast: round(contrast, 1),
+      confidence: round(contrast, 1),
+      samples: points.length,
+      vswr,
+      distance,
+      discontinuities: Math.max(discontinuities, 1),
+      signature: source.fault ? "capacitive-shunt/water-ingress" : "reflection-above-limit",
+      message: `High-reflectance discontinuity at ${distance.toFixed(1)} m · VSWR ${vswr.toFixed(2)} · ${source.fault ? "capacitive-shunt/water-ingress" : "reflection-above-limit"} signature. Inspect for a pinched dielectric or failed 7/16 DIN weatherproofing.`,
     };
+  }
+  // Healthy line: how much headroom the worst point keeps below the limit.
+  const headroom = clamp(((RF_VSWR_LIMIT - peak.vswr) / RF_VSWR_LIMIT) * 100, 0, 99.9);
   return {
     fault: false,
-    confidence: 99.1,
-    samples: 601,
-    vswr: 1.14,
+    headroom: round(headroom, 1),
+    confidence: round(headroom, 1),
+    samples: points.length,
+    vswr,
     distance: null,
     discontinuities: 0,
     signature: "normal-line",
-    message: "Normal line · VSWR 1.14 below 1.32 · no discontinuities.",
+    message: `Normal line · peak VSWR ${vswr.toFixed(2)} below ${RF_VSWR_LIMIT.toFixed(2)} · ${headroom.toFixed(1)}% headroom · no discontinuities.`,
   };
 }
 
@@ -7063,13 +7326,16 @@ function runAICopilot() {
   const microwave = calculateMicrowave();
   const sweeps = [0, 1, 2].map((index) => calculateSweep(index));
   const worstVswr = Math.max(...sweeps.map((sweep) => sweep.max));
-  const rfFault = st.cellular.fault || sweeps.some((sweep) => sweep.fault || sweep.max > 1.32);
+  const rfFault =
+    st.cellular.fault || sweeps.some((sweep) => sweep.fault || sweep.max > RF_VSWR_LIMIT);
+  const faultySweep = sweeps.find((sweep) => sweep.fault || sweep.max > RF_VSWR_LIMIT);
+  const rfFaultDistance = faultySweep ? (faultySweep.faultDistance ?? 0) : 0;
   const mainsLost = alarms.some((alarm) => alarm.code === "MAINS" || alarm.code === "BATTERY");
   const doorOpen = rackSim.doorTarget > 0.5 || rackSim.door > 0.15;
   let rootCause = "NO ACTIVE ROOT CAUSE · SITE NOMINAL";
   let impact = "No service impact detected; continue routine NOC observation.";
   if (rfFault) {
-    rootCause = "RF HIGH REFLECTION · CAPACITIVE SHUNT AT 21.3 m";
+    rootCause = `RF HIGH REFLECTION · CAPACITIVE SHUNT AT ${rfFaultDistance.toFixed(1)} m`;
     impact = "Three sectors are at risk of radio PA thermal shutdown and degraded coverage.";
   } else if (mainsLost) {
     rootCause = "LOSS OF MAINS · DC PLANT ON BATTERY BRIDGE";
@@ -7088,13 +7354,13 @@ function runAICopilot() {
   triage.active = true;
   triage.rootCause = rootCause;
   triage.curve = null;
-  triage.optimized = false;
   triage.lastChoice = null;
   triage.report = `${rootCause} · BACKUP ${horizon}`;
   triage.options = [
     { id: 1, label: "Start Generator 1" },
     { id: 2, label: "Battery math + throttle carriers" },
-    { id: 3, label: "Locate 21.3 m cable repair" },
+    { id: 3, label: `Locate ${rfFaultDistance.toFixed(1)} m cable repair` },
+    ...(triage.throttleBackup ? [{ id: 4, label: "Restore sector settings" }] : []),
   ];
   return [
     "AI NOC · EXECUTIVE ROOT-CAUSE REPORT",
@@ -7102,10 +7368,12 @@ function runAICopilot() {
     `IMPACT: ${impact}`,
     `BACKUP HORIZON: ${horizon} · ${powerSim.batterySoc.toFixed(1)}% SOC · ${power.remainingEnergy.toFixed(1)} kWh usable remaining`,
     `POWER: ${sourceLabel()} · ${power.dcBusVoltage.toFixed(1)} V DC · rectifiers ${power.installed}/${power.required + 1} required · ${microwave.locked ? "backhaul locked" : "backhaul unlocked"}`,
-    `RF: worst VSWR ${worstVswr.toFixed(2)} · ${rfFault ? "21.3 m discontinuity / water-ingress signature" : "all 601-point lines below 1.32"}`,
+    `RF: worst VSWR ${worstVswr.toFixed(2)} · ${rfFault ? `${rfFaultDistance.toFixed(1)} m discontinuity / water-ingress signature` : `all 601-point lines below ${RF_VSWR_LIMIT.toFixed(2)}`}`,
     `CABINET: ${rackHousing().vendor} ${rackHousing().model} · ${rackHousing().ip} · door ${doorOpen ? "OPEN" : "CLOSED"} · ${rack.loadKw.toFixed(2)} kW`,
     `CORRELATED ALARMS: ${alarms.length ? alarms.map((alarm) => `${alarm.severity} ${alarm.label}`).join(" | ") : "NONE"}`,
-    "Choose 1: crank Generator 1 · 2: extend autonomy · 3: camera-guided RF repair.",
+    `Choose 1: crank Generator 1 · 2: extend autonomy · 3: camera-guided RF repair.${
+      triage.throttleBackup ? " · 4: restore sector settings." : ""
+    }`,
   ].join("\n");
 }
 
@@ -7140,6 +7408,12 @@ function applyTriageChoice(choice) {
       autonomy: before.autonomy,
       current: (before.dcLoad * 1000) / 48,
     };
+    if (!triage.throttleBackup) {
+      triage.throttleBackup = {
+        radioLoadKw: st.power.radioLoadKw,
+        sectors: st.cellular.sectors.map((sector) => ({ ...sector })),
+      };
+    }
     st.cellular.sectors.forEach((sector, index) => {
       if (index === 0) sector.onAir = true;
       if (index > 0) {
@@ -7149,7 +7423,6 @@ function applyTriageChoice(choice) {
       }
     });
     st.power.radioLoadKw = Math.max(0.5, st.power.radioLoadKw * 0.65);
-    triage.optimized = true;
     normalizePowerState();
     const after = calculatePower();
     triage.curve = {
@@ -7171,6 +7444,17 @@ function applyTriageChoice(choice) {
     ].join("\n");
   }
   if (Number(choice) === 3) {
+    const faultSweep = [0, 1, 2]
+      .map((index) => calculateSweep(index))
+      .find((sweep) => sweep.fault && sweep.faultDistance !== null);
+    if (!faultSweep) {
+      return [
+        "AI NOC · OPTION 3",
+        "No fault is present on any sector feeder.",
+        "Arm [ Simulate Waterlogged Connector / Cable Kink ] and re-run the sweep, then ask for the repair location again.",
+      ].join("\n");
+    }
+    const faultDistance = faultSweep.faultDistance;
     st.masterStep = 4;
     st.microwave.system = "CELLULAR";
     st.tab = "configure";
@@ -7183,7 +7467,7 @@ function applyTriageChoice(choice) {
       cellularVisuals.cables[0];
     if (cable) {
       const length = cable.curve.getLength();
-      const point = cable.curve.getPointAt(clamp(21.3 / Math.max(length, 0.001), 0, 1));
+      const point = cable.curve.getPointAt(clamp(faultDistance / Math.max(length, 0.001), 0, 1));
       const marker = new T.Group();
       marker.position.copy(point);
       siteRoot.add(marker);
@@ -7191,12 +7475,12 @@ function applyTriageChoice(choice) {
       core.raycast = () => {};
       const ring = mesh(new T.TorusGeometry(0.34, 0.025, 8, 32), MAT.orange, marker, false);
       ring.raycast = () => {};
-      rackLabel("AI DTF · 21.3 m", 0.75, 0.09, 0, 0.48, 0, marker, true);
+      rackLabel(`AI DTF · ${faultDistance.toFixed(1)} m`, 0.75, 0.09, 0, 0.48, 0, marker, true);
       rfRegister(marker, {
         id: "ai-rf-fault-21-3",
         rfKind: "coax",
         sector: 0,
-        title: "AI NOC · Damaged 21.3 m Cable Area",
+        title: `AI NOC · Damaged ${faultDistance.toFixed(1)} m Cable Area`,
         focusSize: 3,
       });
       triage.marker = marker;
@@ -7207,8 +7491,7 @@ function applyTriageChoice(choice) {
       cameraGoal.phi = 0.95;
       if (reducedMotionQuery.matches) snapCameraToGoal();
     }
-    triage.report =
-      "STEP 04 SITE MASTER · CAMERA TRACKING DTF 21.3 m · REPAIR WEATHERPROOFING / DIELECTRIC";
+    triage.report = `STEP 04 SITE MASTER · CAMERA TRACKING DTF ${faultDistance.toFixed(1)} m · REPAIR WEATHERPROOFING / DIELECTRIC`;
     renderDrawer();
     updateSelection();
     const content = $("#drawer-content"),
@@ -7217,9 +7500,36 @@ function applyTriageChoice(choice) {
       const relativeTop = bench.getBoundingClientRect().top - content.getBoundingClientRect().top;
       content.scrollTop += relativeTop - 8;
     }
-    return "AI NOC · OPTION 3\nStep 04 Site Master is open. The camera is smoothly moving to the damaged 21.3 m cable area.\nInspect the pinched dielectric and failed 7/16 DIN weatherproofing, clear the fault scenario, then repeat the 601-point sweep and AI diagnostic.";
+    return [
+      "AI NOC · OPTION 3",
+      "Step 04 Site Master is open. The camera is smoothly moving to the damaged " +
+        `${faultDistance.toFixed(1)} m cable area.`,
+      "Inspect the pinched dielectric and failed 7/16 DIN weatherproofing, clear the fault scenario, then repeat the 601-point sweep and AI diagnostic.",
+    ].join("\n");
   }
-  return "ERROR: Choose triage option 1, 2 or 3.";
+  if (Number(choice) === 4) {
+    const backup = triage.throttleBackup;
+    if (!backup) return "ERROR: No throttled carrier settings to restore.";
+    st.power.radioLoadKw = backup.radioLoadKw;
+    backup.sectors.forEach((sector, index) => {
+      Object.assign(st.cellular.sectors[index], sector);
+    });
+    triage.throttleBackup = null;
+    triage.curve = null;
+    normalizeCellularState();
+    normalizePowerState();
+    rebuildSite();
+    updateHUD();
+    const after = calculatePower();
+    triage.report = `SECTOR SETTINGS RESTORED · ${after.dcLoad.toFixed(2)} kW · ${after.autonomy.toFixed(1)} h`;
+    return [
+      "AI NOC · OPTION 4 · RESTORE SECTOR SETTINGS",
+      `Sector TX power, bandwidth and on-air state returned to their pre-throttle values.`,
+      `Radio load reference restored to ${backup.radioLoadKw.toFixed(1)} kW.`,
+      `DC load is now ${after.dcLoad.toFixed(2)} kW · autonomy ${after.autonomy.toFixed(1)} h.`,
+    ].join("\n");
+  }
+  return "ERROR: Choose triage option 1, 2, 3 or 4.";
 }
 
 function renderOnboardingStep1() {
@@ -7495,14 +7805,14 @@ function updateHUD() {
   if (st.onboarding.active && !launch.onAir && !aiBuild.running) {
     hud.classList.add("is-setup");
     hud.innerHTML = `
-      <div class="hud-cell hud-setup" id="hud-setup-status"><small>Site Status</small><strong>[ Setting Up Site... ]</strong></div>
+      <div class="hud-cell hud-setup" id="hud-setup-status"><small>Site Status</small><strong>[ Setting up ]</strong></div>
       <div class="hud-cell"><small>Environment</small><strong>${ENVIRONMENTS[st.env].name}</strong></div>
       <div class="hud-cell"><small>Structure</small><strong>${st.onboarding.towerSelected ? `${TOWERS[st.tower].short} · ${st.H} m` : "Choose tower below"}</strong></div>
       <div class="hud-cell hud-setup-hint"><small>Guided Setup</small><strong>Pick tower &amp; height in Step 01 to unlock full live telemetry</strong></div>`;
     hud.scrollLeft = 0;
     livePill.classList.remove("on-air");
     livePill.classList.add("setup");
-    livePill.querySelector("span").textContent = "NEW SITE SETUP";
+    livePill.querySelector("span").textContent = "SETTING UP";
     syncHUDScroll();
     return;
   }
@@ -7512,7 +7822,7 @@ function updateHUD() {
   const alarms = powerAlarms();
   const eventActive = powerSim.phase !== "NORMAL" || alarms.length > 0;
   hud.innerHTML = `
-    ${launch.onAir ? `<div class="hud-cell hud-on-air" id="hud-on-air"><small>Site status · On Air</small><strong>[ ON AIR — OPERATIONAL ] • ${calc.totalLoad.toFixed(2)} kW • ${calc.autonomy.toFixed(1)} h • ${cellularThroughputGbps()} Gbps</strong></div>` : ""}
+    <div class="hud-cell ${launch.onAir ? "hud-on-air" : ""}" id="hud-site-status"><small>Site status</small><strong>${launch.onAir ? `[ On air ] • ${calc.totalLoad.toFixed(2)} kW • ${calc.autonomy.toFixed(1)} h • ${cellularThroughputGbps()} Gbps` : "[ Live model ]"}</strong></div>
     <div class="hud-cell"><small>Environment</small><strong>${ENVIRONMENTS[st.env].name}</strong></div>
     <div class="hud-cell"><small>Structure</small><strong>${TOWERS[st.tower].short} · ${st.H} m</strong></div>
     <div class="hud-cell"><small>Total load</small><strong>${calc.totalLoad.toFixed(2)} kW</strong></div>
@@ -7533,9 +7843,7 @@ function updateHUD() {
   hud.scrollLeft = scroll;
   livePill.classList.remove("setup");
   livePill.classList.toggle("on-air", launch.onAir);
-  livePill.querySelector("span").textContent = launch.onAir
-    ? "ON AIR · SITE OPERATIONAL"
-    : "LIVE ENGINEERING MODEL";
+  livePill.querySelector("span").textContent = launch.onAir ? "ON AIR" : "LIVE MODEL";
   syncHUDScroll();
 }
 
@@ -7677,7 +7985,6 @@ function startBlackout() {
   powerSim.gridVoltage = 0;
   powerSim.eventStart = performance.now();
   powerSim.generatorCooldownUntil = 0;
-  powerSim.transferMs = 0;
   playContactor();
   toast("LOSS OF MAINS · DC BUS ON BATTERY · 0.000 ms");
   renderDrawer();
@@ -7890,7 +8197,6 @@ function updateMicrowaveVisuals(now) {
   microwaveVisuals.linkLeds.forEach((led) => {
     led.material = ledMaterial;
   });
-  microwaveSim.wasLocked = calc.locked;
 }
 
 function updateCellularVisuals(now) {
@@ -7931,7 +8237,11 @@ function updateCellularVisuals(now) {
   st.cellular.sweeps[cellularSim.sector] = result;
   cellularSim.running = false;
   if (st.masterStep === 4 && st.microwave.system === "CELLULAR") renderDrawer();
-  toast(result.pass ? "VSWR 1.14 · PASS · HEALTHY FEEDER" : "VSWR 2.27 · FAULT LOCATED AT 21.3m");
+  toast(
+    result.pass
+      ? `VSWR ${result.max.toFixed(2)} · PASS · HEALTHY FEEDER`
+      : `VSWR ${result.max.toFixed(2)} · FAULT LOCATED AT ${result.faultDistance.toFixed(1)}m`
+  );
 }
 
 function updateLaunchVisuals(now) {
@@ -8406,8 +8716,7 @@ $("#drawer").addEventListener("click", (event) => {
     toast("STEP 02 · CHOOSE VENDOR & BUILD RACK SLOTS");
   } else if (action === "environment" && ENVIRONMENTS[value]) {
     st.env = value;
-    st.tower = ENVIRONMENTS[value].defaultTower;
-    st.H = TOWERS[st.tower].defaultHeight;
+    applyEnvironmentTowerRule(value);
     st.lightning = ENVIRONMENTS[value].mandatoryESE ? "ESE_ACTIVE" : "FRANKLIN";
     if (st.onboarding.active) st.onboarding.towerSelected = true;
     st.selectedId = null;
@@ -8589,10 +8898,11 @@ $("#drawer").addEventListener("click", (event) => {
     const result = st.cellular.sweeps[index] || calculateSweep(index);
     st.cellular.aiDiagnostics[index] = classifyRFWaveform(result);
     renderDrawer();
+    const diagnosis = st.cellular.aiDiagnostics[index];
     toast(
-      st.cellular.aiDiagnostics[index].fault
-        ? "AI RF · 96.8% FAULT · 21.3 m"
-        : "AI RF · 99.1% HEALTHY"
+      diagnosis.fault
+        ? `AI RF · FAULT AT ${diagnosis.distance.toFixed(1)} m · VSWR ${diagnosis.vswr.toFixed(2)}`
+        : `AI RF · HEALTHY · PEAK VSWR ${diagnosis.vswr.toFixed(2)}`
     );
   } else if (action === "rf-inspect-master" && registry.has("rf-site-master")) {
     selectComponent("rf-site-master");
@@ -8650,7 +8960,7 @@ $("#drawer").addEventListener("click", (event) => {
     rackSim.alarmTraceActive = true;
     rackSim.alarmBadge = true;
     rackSim.doorTarget = 1;
-    toast("ALARM HIGHWAY · OVP → SAU3 → SCU → SHU → MASTER DUG");
+    toast(`ALARM HIGHWAY · ${alarmPathRoute().replace(/ → /g, " → ")}`);
     renderDrawer();
   } else if (
     action === "power-source-mode" &&
@@ -8664,9 +8974,6 @@ $("#drawer").addEventListener("click", (event) => {
         ? "GENERATOR 2 UNLOCKED · OFF-GRID 12 h ROTATION"
         : "UTILITY + STANDBY ARCHITECTURE RESTORED"
     );
-  } else if (action === "ats-mode" && ["CLASSIC_RELAY", "DIGITAL_PLC"].includes(value)) {
-    st.power.atsMode = value;
-    renderDrawer();
   } else if (action === "battery-strings") {
     st.power.batteryStrings = Number(value);
     normalizePowerState();
@@ -8904,7 +9211,7 @@ $("#drawer").addEventListener("pointermove", (event) => {
   dot.setAttribute("cy", y);
   cellularSim.cursorDistance = point.distance;
   $("#rf-cursor-readout").textContent =
-    `DTF ${point.distance.toFixed(1)}m · VSWR ${point.vswr.toFixed(2)} · ${point.vswr <= 1.32 ? "PASS" : "HIGH REFLECTION"}`;
+    `DTF ${point.distance.toFixed(1)}m · VSWR ${point.vswr.toFixed(2)} · ${point.vswr <= RF_VSWR_LIMIT ? "PASS" : "HIGH REFLECTION"}`;
 });
 $("#drawer").addEventListener("pointerout", (event) => {
   if (event.target.id !== "rf-graph-hit") return;
@@ -9243,6 +9550,17 @@ window.TowerStudio = {
   rackSimulation: rackSim,
   rackVisuals,
   enterMasterStep,
+  renderDrawer,
+  clearSelection,
+  applyEnvironmentTowerRule,
+  spaceDiversityAllowed,
+  primaryDishY,
+  slotName,
+  slotShortName,
+  slotBadge,
+  alarmPathRoute,
+  alarmPathBlockedReason,
+  rackCardContent,
   updateRack: updateRackVisuals,
   updateCellular: updateCellularVisuals,
   powerSimulation: powerSim,

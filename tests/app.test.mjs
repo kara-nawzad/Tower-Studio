@@ -78,11 +78,11 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   // Calm top HUD in setup mode (no 10 alarming red/green telemetry cells on initial load)
   const livePill = document.getElementById("live-pill");
   assert.equal(livePill.classList.contains("setup"), true);
-  assert.equal(livePill.textContent.trim(), "NEW SITE SETUP");
+  assert.equal(livePill.textContent.trim(), "SETTING UP");
 
   const hud = document.getElementById("site-hud");
   assert.equal(hud.classList.contains("is-setup"), true);
-  assert.match(hud.textContent, /\[\s*Setting Up Site\.\.\.\s*\]/);
+  assert.match(hud.textContent, /\[\s*Setting up\s*\]/);
   assert.equal(hud.querySelectorAll(".hud-cell.red, .hud-cell strong.red").length, 0);
   assert.equal(hud.querySelectorAll(".hud-cell").length, 4);
 
@@ -116,7 +116,7 @@ test("gentle first-run onboarding starts in calm New Site Setup and advances to 
   assert.equal(studio.state.tab, "configure");
   assert.equal(tabsBar.hidden, false);
   assert.equal(hud.classList.contains("is-setup"), false);
-  assert.equal(hud.querySelectorAll(".hud-cell").length, 10);
+  assert.equal(hud.querySelectorAll(".hud-cell").length, 11);
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="ERICSSON"]'));
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="HUAWEI"]'));
   assert.ok(document.querySelector('[data-action="smart-vendor"][data-value="NOKIA"]'));
@@ -170,7 +170,7 @@ test("Custom Multi-Gen curates matching baseband cards and dynamically sums HUD 
   assert.equal(studio.state.rack.slots.baseband, true, "Baseband 6630 active for 4G");
   assert.equal(studio.customGenerationMetrics().throughput, "342 Mbps");
   assert.equal(studio.customGenerationMetrics().backhaulMbps, 600);
-  assert.match(studio.smartProfile().chassis, /DUW 30 \+ Baseband 6630/);
+  assert.match(studio.smartProfile().chassis, /DUW 30 digital unit \(WCDMA\) \+ Baseband 6630/);
 
   const hudText3g4g = document.getElementById("site-hud").textContent;
   assert.match(hudText3g4g, /Cellular 3G\+4G342 Mbps/);
@@ -343,11 +343,21 @@ test("application executes full Phases 01–07 simulation, RF sweep classifier, 
     assert.equal(studio.state.masterStep, step);
   }
 
-  // Verify Phase 05 sweep + Phase 07 RF waveform classifier
+  // Verify Phase 05 sweep + Phase 07 RF waveform classifier.
+  // The classifier is honest: peak VSWR, fault distance and the confidence-like
+  // figure are all derived from the sweep, never hard-coded.
   const sweep = studio.calculateSweep(0);
   const diagnosis = studio.classifyRFWaveform(sweep);
   assert.equal(diagnosis.fault, false);
-  assert.equal(diagnosis.confidence, 99.1);
+  assert.equal(diagnosis.distance, null);
+  assert.equal(diagnosis.vswr, Number(sweep.max.toFixed(2)));
+  assert.ok(diagnosis.headroom > 0 && diagnosis.headroom < 100);
+  assert.equal(diagnosis.confidence, diagnosis.headroom);
+  assert.equal(
+    diagnosis.headroom,
+    Number((((1.32 - sweep.max) / 1.32) * 100).toFixed(1)),
+    "Headroom must be derived from the measured peak VSWR"
+  );
 
   // Verify Phase 06 CLI + Phase 07 AI Architect parser & NOC Copilot
   const cliOut = studio.executeCLI("lt all");

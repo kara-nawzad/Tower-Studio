@@ -37,7 +37,7 @@ Grid / Generator 1 / Generator 2 → ATS → MDB → Rectifiers → -48V DC bus 
 - Dual-split climate controller, indoor evaporators, outdoor condensers, and animated fans.
 - Procedural 3 kW rectifier modules, PCF, PDU, PFU, BFU, and copper DC busbars.
 - One, two, or four battery strings; each string contains four 12V blocks in series. Capacity and VRLA/Lithium chemistry are configurable.
-- Nominal 1,000L bulk diesel tank with containment and Alarm #7 level monitoring.
+- Nominal 1,000 L bulk diesel tank with containment and Alarm #7 level monitoring.
 
 Rooftop configurations place diesel generation and bulk fuel at ground level rather than adding unverified generator loads to the roof.
 
