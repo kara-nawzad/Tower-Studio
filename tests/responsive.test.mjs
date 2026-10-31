@@ -95,8 +95,11 @@ test("the sheet height arithmetic accounts for the step nav", () => {
   assert.match(phoneBlock, /--nav-h/);
   assert.match(phoneBlock, /100dvh/);
   assert.match(phoneBlock, /data-sheet="full"/);
-  assert.match(phoneBlock, /data-sheet="peek"\]\s*\{\s*max-height:\s*96px/);
-  assert.match(phoneBlock, /data-sheet="half"\]\s*\{\s*max-height:\s*50dvh/);
+  // Peek is exactly one 44px grab bar; half is 40% of the dynamic viewport.
+  assert.match(CSS, /--sheet-peek:\s*var\(--tap\)/);
+  assert.match(CSS, /--sheet-half:\s*40dvh/);
+  assert.match(phoneBlock, /data-sheet="peek"\]\s*\{\s*height:\s*var\(--sheet-peek\)/);
+  assert.match(phoneBlock, /data-sheet="half"\]\s*\{\s*height:\s*min\(/);
 });
 
 test("camera frustum shifts come from measured panel geometry, not constants", () => {
@@ -159,12 +162,13 @@ test("the zoom buttons and undo/redo buttons are present at every width", () => 
 });
 
 test("touch targets and minimum type sizes are declared in CSS", () => {
-  // 44px minimum on the phone top bar.
+  // 44px minimum on the phone top bar, from the shared tap token.
   const phoneBlock = CSS.slice(
     CSS.indexOf("@media (max-width: 767px)"),
     CSS.indexOf("@media (max-height: 450px)")
   );
-  assert.match(phoneBlock, /\.icon-button\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(CSS, /--tap:\s*44px/);
+  assert.match(phoneBlock, /\.icon-button\s*\{[^}]*min-height:\s*var\(--tap\)/s);
 
   // HUD numbers never drop below 11px.
   assert.match(
@@ -210,15 +214,39 @@ test("coarse pointers get the full 44px floor for the compact controls", () => {
     assert.ok(rule, `${selector} is lifted on coarse pointers`);
     assert.match(rule.body, /min-height:\s*44px/, `${selector} reaches 44px`);
   }
-  assert.match(coarse, /\.hud-scroll-btn\s*\{[^}]*width:\s*44px/s);
+  // The pass-2 chrome joins the same floor: no 32px chip or gate survives.
+  for (const selector of [".hud-chip", ".gate", ".decision-head", ".view-controls .icon-button"]) {
+    const rule = rules.find((r) => r.selectors.includes(selector));
+    assert.ok(rule, `${selector} is lifted on coarse pointers`);
+    assert.ok(/min-height:\s*(44px|var\(--tap\))/.test(rule.body), `${selector} reaches 44px`);
+  }
 });
 
-test("the AI bar sits above the sheet on a phone", () => {
-  const phoneBlock = CSS.slice(
-    CSS.indexOf("@media (max-width: 767px)"),
-    CSS.indexOf("@media (max-height: 450px)")
-  );
-  assert.match(phoneBlock, /\.ai-architect\s*\{[^}]*bottom:\s*calc\(var\(--nav-h\)/s);
+test("the AI Architect is a dialog over the scene, not a bar", () => {
+  const { document, dom, studio } = createHeadlessStudio({ width: 390, height: 844 });
+  const dialog = document.querySelector("#ai-architect");
+  assert.ok(dialog, "the dialog exists");
+  assert.equal(dialog.hidden, true, "and is collapsed on arrival");
+  assert.ok(dialog.querySelector(".ai-input"), "with an input");
+  assert.equal(dialog.querySelectorAll(".ai-chip").length, 3, "and three scenario chips");
+  assert.ok(dialog.querySelector("#ai-plan-card"), "and a plan card");
+
+  // It never sits in the top bar: no AI control lives there.
+  assert.equal(document.querySelector("#topbar [data-action='menu-ai']"), null);
+  assert.ok(document.querySelector('#menu-panel [data-action="menu-ai"]'), "the menu opens it");
+
+  studio.setAIArchitectOpen(true);
+  assert.equal(dialog.hidden, false);
+  assert.equal(document.querySelector("#ai-scrim").hidden, false);
+  studio.setAIArchitectOpen(false);
+  assert.equal(dialog.hidden, true);
+  assert.equal(document.querySelector("#ai-scrim").hidden, true);
+  dom.window.close();
+
+  // The dialog is a floating panel with its own scrim, never a bottom bar.
+  const aiRule = CSS.match(/\.ai-architect\s*\{([^}]*)\}/)[1];
+  assert.doesNotMatch(aiRule, /bottom:\s*calc\(var\(--nav-h\)/);
+  assert.match(CSS, /\.ai-scrim\s*\{[^}]*inset:\s*0/s);
 });
 
 test("the five master-step buttons share one equal grid", () => {
