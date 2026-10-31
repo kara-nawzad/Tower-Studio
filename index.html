@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./src/styles/main.css" />
@@ -18,20 +18,17 @@
       <div class="hero-stage" id="hero-stage">
         <div class="hero-artwork" id="hero-artwork">
           <!--
-            The same hero artwork in three encodings. Browsers pick AVIF, then
-            WebP, then the original PNG; the PNG at 3.2 MB is now only a
-            fallback for very old browsers.
-          -->
-          <!--
             The same hero artwork in three encodings and three widths. Browsers
-            pick AVIF, then WebP, then the original PNG; the width set keeps the
-            picture at or above its rendered size so it is never upscaled. The
+            pick AVIF, then WebP, then the original PNG. The box is the cover
+            box (1.08x the window), and a portrait phone only keeps a narrow
+            slice of a landscape photograph, so `sizes` asks for more than the
+            window width — otherwise the slice a phone shows is upscaled. The
             PNG at 3.2 MB is now only a fallback for very old browsers.
           -->
           <picture>
             <source
               type="image/avif"
-              sizes="100vw"
+              sizes="(max-width: 767px) 200vw, 108vw"
               srcset="
                 ./herotower-1200.avif 1200w,
                 ./herotower-1678.avif 1678w,
@@ -40,7 +37,7 @@
             />
             <source
               type="image/webp"
-              sizes="100vw"
+              sizes="(max-width: 767px) 200vw, 108vw"
               srcset="
                 ./herotower-1200.webp 1200w,
                 ./herotower-1678.webp 1678w,

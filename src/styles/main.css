@@ -11,7 +11,12 @@
   --red: #dc2626;
   --heading: "Barlow Condensed", sans-serif;
   --body: "Barlow", system-ui, sans-serif;
-  --mono: "Space Mono", monospace;
+  /* One typewriter face was enough for anybody: the label/number face is the
+     project's own condensed sans now, so nothing in the interface renders in a
+     system monospace. (The CLI console keeps a monospace stack of its own — see
+     --term — because columns of terminal output have to line up.) */
+  --mono: "Barlow Condensed", "Barlow", sans-serif;
+  --term: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   color-scheme: light;
   box-sizing: border-box;
 }
@@ -173,6 +178,7 @@ h1 {
 h1 span {
   color: var(--blue);
 }
+
 /* ---------------------------------------------------------------------------
    Chrome geometry tokens (pass 2).
    Every fixed piece of the interface — top bar, status strip, step bar, panel,
@@ -664,48 +670,34 @@ body.hero-active #selection-tag {
 }
 
 /*
-  The hero picture is full-bleed, never letterboxed. The box keeps the
-  artwork's own aspect ratio — so object-fit can never distort it — and is
-  sized to *cover* the stage on both axes, then cropped by .hero-stage. There is
-  therefore never an empty band of flat blue above or below the picture, at any
-  window shape.
+  The hero picture is full-bleed: one photograph, edge to edge, at every window
+  shape. There is no letterbox and no blurred filler behind it.
 
-  --hero-focus-x / --hero-focus-y choose which slice survives the crop: the
-  picture is anchored so that its own (focus) point lands at the same fraction
-  of the viewport. A landscape laptop crops a few per cent off the edges; a
-  portrait phone keeps only the middle third of the width, so the focus slides
-  right to keep the tower, the shelter and the generator in frame.
+  The box is the *picture*, not the stage: it keeps the artwork's own aspect
+  ratio (so object-fit can never distort it) and is sized to cover the viewport
+  on both axes. Cover is a set operation — width >= viewport width AND height >=
+  viewport height — so the only real choice left is *which* slice survives the
+  crop, and that is what --hero-focus decides.
 
-  --hero-bleed is the headroom that lets the pointer parallax and the tilt move
-  the picture without ever exposing an edge (see heroMotion.maxShift* in
-  app.js, which is clamped to 3% of the viewport to stay inside it).
+  app.js measures the window (heroLayout()) and writes --hero-w / --hero-h /
+  --hero-x / --hero-y as pixels, because max()/calc() chains with custom
+  properties are exactly the kind of thing a browser can silently drop — and a
+  dropped size is a letterbox. The CSS below is the no-JS fallback: a full
+  viewport box with object-fit: cover, which is still edge to edge.
 */
 .hero-artwork {
-  --hero-focus-x: 50%;
-  --hero-focus-y: 50%;
-  --hero-bleed: 1.08;
+  --hero-w: 100vw;
+  --hero-h: 100vh;
+  --hero-h: 100dvh;
+  --hero-x: 0px;
+  --hero-y: 0px;
   position: absolute;
-  left: var(--hero-focus-x);
-  top: var(--hero-focus-y);
-  width: max(calc(100vw * var(--hero-bleed)), calc(100vh * var(--hero-aspect) * var(--hero-bleed)));
-  width: max(
-    calc(100vw * var(--hero-bleed)),
-    calc(100dvh * var(--hero-aspect) * var(--hero-bleed))
-  );
-  height: max(
-    calc(100vh * var(--hero-bleed)),
-    calc(100vw / var(--hero-aspect) * var(--hero-bleed))
-  );
-  height: max(
-    calc(100dvh * var(--hero-bleed)),
-    calc(100vw / var(--hero-aspect) * var(--hero-bleed))
-  );
-  transform: translate3d(
-      calc(var(--hero-focus-x) * -1 + var(--hero-px, 0px)),
-      calc(var(--hero-focus-y) * -1 + var(--hero-py, 0px)),
-      0
-    )
-    rotateX(var(--hero-rx, 0deg)) rotateY(var(--hero-ry, 0deg));
+  left: 0;
+  top: 0;
+  width: var(--hero-w);
+  height: var(--hero-h);
+  transform: translate3d(var(--hero-x), var(--hero-y), 0) rotateX(var(--hero-rx, 0deg))
+    rotateY(var(--hero-ry, 0deg));
   transform-style: preserve-3d;
   will-change: transform;
   user-select: none;
@@ -717,24 +709,15 @@ body.hero-active #selection-tag {
   pointer-events: none;
 }
 
-/* Portrait windows see a narrow slice of a landscape picture: slide the focus
-   right so the site stays in frame instead of the empty valley on its left. */
-@media (orientation: portrait) {
-  .hero-artwork {
-    --hero-focus-x: 58%;
-  }
-}
-@media (max-width: 767px) and (orientation: portrait) {
-  .hero-artwork {
-    --hero-focus-x: 60%;
-  }
-}
-
 .hero-image {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  /* The box already has the picture's ratio once app.js has measured it, so
+     cover and contain are identical there; cover is what keeps the first paint
+     (before the measurement) edge to edge instead of letterboxed. */
+  object-fit: cover;
+  object-position: 50% 50%;
   pointer-events: none;
 }
 
@@ -1797,12 +1780,17 @@ body.hero-active #selection-tag {
 }
 input[type="range"] {
   width: 100%;
-  height: 30px;
+  /* The track is 9px but the target is 34px tall, so the thumb is grabbable
+     with a fat finger as well as a pointer. */
+  height: 34px;
   margin-top: 5px;
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
   cursor: ew-resize;
+  /* Horizontal drags belong to the slider; vertical drags still scroll the
+     panel. */
+  touch-action: pan-y;
 }
 input[type="range"]::-webkit-slider-runnable-track {
   height: 9px;
@@ -1814,9 +1802,9 @@ input[type="range"]::-webkit-slider-runnable-track {
   );
 }
 input[type="range"]::-webkit-slider-thumb {
-  width: 22px;
-  height: 22px;
-  margin-top: -9px;
+  width: 24px;
+  height: 24px;
+  margin-top: -9.5px;
   appearance: none;
   -webkit-appearance: none;
   border: 2px solid var(--ink);
@@ -1834,8 +1822,8 @@ input[type="range"]::-moz-range-progress {
   background: var(--blue);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border: 2px solid var(--ink);
   border-radius: 0;
   background: var(--amber);
@@ -3842,7 +3830,7 @@ input[type="range"]::-moz-range-thumb {
   color: #d1fae5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 400 11px/1.55 var(--mono);
+  font: 400 11px/1.55 var(--term);
 }
 .cli-output .command {
   color: #fde047;
@@ -3875,7 +3863,7 @@ input[type="range"]::-moz-range-thumb {
   padding-left: 8px;
   overflow: hidden;
   color: #38bdf8;
-  font: 700 11px var(--mono);
+  font: 700 11px var(--term);
   white-space: nowrap;
 }
 .cli-input {
@@ -3887,7 +3875,7 @@ input[type="range"]::-moz-range-thumb {
   outline: 0;
   background: transparent;
   color: var(--white);
-  font: 400 11px var(--mono);
+  font: 400 11px var(--term);
 }
 .cli-submit {
   min-width: 74px;
@@ -4391,17 +4379,12 @@ input[type="range"]::-moz-range-thumb {
     touch-action: none;
   }
   /*
-    Phone: the same full-bleed picture. Only the tilt differs — a phone has no
-    pointer, so the artwork never rocks back on its X axis, and the focus is
-    pushed right (--hero-focus-x: 60%) to keep the tower in frame.
+    Phone: the same full-bleed picture, cropped by app.js to the tower and the
+    equipment shelter. Only the tilt differs — a phone has no pointer, so the
+    artwork never rocks back on its X axis.
   */
   .hero-artwork {
-    transform: translate3d(
-        calc(var(--hero-focus-x) * -1 + var(--hero-px, 0px)),
-        calc(var(--hero-focus-y) * -1 + var(--hero-py, 0px)),
-        0
-      )
-      rotateY(var(--hero-ry, 0deg));
+    transform: translate3d(var(--hero-x), var(--hero-y), 0) rotateY(var(--hero-ry, 0deg));
   }
   .hero-grass {
     height: 13%;

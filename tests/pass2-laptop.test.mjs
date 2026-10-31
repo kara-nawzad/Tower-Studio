@@ -169,12 +169,15 @@ test("L3: the strip is step-aware, five cells at most, with no scrollbar or arro
   const { document, studio, dom } = createHeadlessStudio({ width: 1366, height: 768 });
   studio.state.onboarding.active = false;
 
+  // The strip carries the short label of each number ("DC load"), the "All
+  // numbers" panel the full one ("Cabinet DC load"). A narrow cell that
+  // ellipsised "CELLULAR MIXE…" was the bug this replaced.
   const expected = {
-    1: ["Environment", "Structure", "Civil check", "Earth resistance"],
-    2: ["Cabinet", "Cabinet DC load", "Backhaul speed", "Live services"],
-    3: ["AC source", "Total load", "Backup hours", "Rectifier N+1"],
-    4: ["Microwave RSL", "Fade margin", "Backhaul speed", "Link status"],
-    5: ["Gates passed", "Site status", "Active alarms"],
+    1: ["Environment", "Structure", "Civil", "Earth"],
+    2: ["Cabinet", "DC load", "Backhaul", "Services"],
+    3: ["AC source", "Load", "Backup", "N+1"],
+    4: ["RSL", "Fade", "Backhaul", "Link"],
+    5: ["Gates", "Status", "Alarms"],
   };
 
   for (const [step, labels] of Object.entries(expected)) {
@@ -198,11 +201,22 @@ test("L3: the strip is step-aware, five cells at most, with no scrollbar or arro
   const labels4b = [...document.querySelectorAll("#site-hud .hud-cell small")].map((node) =>
     node.textContent.trim()
   );
-  assert.equal(labels4b[0].startsWith("Cellular"), true);
+  assert.equal(labels4b[0], "Cellular");
+  assert.deepEqual(labels4b, ["Cellular", "Sector", "Sweep VSWR", "Throughput"]);
   assert.equal(labels4b.length, 4);
 
-  // The whole catalogue lives behind "All numbers".
-  assert.equal(document.querySelectorAll("#hud-panel-grid .hud-cell").length, 24);
+  // The whole catalogue lives behind "All numbers", with the long labels.
+  const panelLabels = [...document.querySelectorAll("#hud-panel-grid .hud-cell small")].map(
+    (node) => node.textContent.trim()
+  );
+  assert.equal(panelLabels.length, 24);
+  for (const label of ["Cabinet DC load", "Microwave RSL", "Rectifier N+1", "Last sweep VSWR"]) {
+    assert.ok(panelLabels.includes(label), `the panel still says "${label}"`);
+  }
+  // …and nothing in the strip is long enough to be cut in a narrow cell.
+  for (const label of Object.values(expected).flat()) {
+    assert.ok(label.length <= 11, `"${label}" has to fit a 160px cell`);
+  }
   const stripRule = CSS.match(/\n\.site-hud\s*\{([^}]*)\}/)[1];
   assert.match(stripRule, /overflow:\s*hidden/);
   assert.doesNotMatch(stripRule, /scroll/);
@@ -509,7 +523,7 @@ test("the laptop hero is full-bleed too, and keeps all four hotspots in frame", 
     return [Number(x.toFixed(2)), Number(y.toFixed(2))];
   };
   assert.deepEqual(focus(1366, 768), [0.5, 0.5], "a landscape window centres the picture");
-  assert.deepEqual(focus(800, 1024), [0.58, 0.5], "a portrait tablet slides it right");
-  assert.deepEqual(focus(390, 844), [0.6, 0.5], "a portrait phone slides it furthest");
+  assert.deepEqual(focus(800, 1024), [0.56, 0.5], "a portrait tablet slides it right");
+  assert.deepEqual(focus(390, 844), [0.58, 0.5], "a portrait phone slides it furthest");
   dom.window.close();
 });

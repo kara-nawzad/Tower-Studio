@@ -153,7 +153,9 @@ test("the hero image ships WebP and AVIF variants behind the original PNG", () =
       );
     }
   }
-  assert.match(HTML, /sizes="100vw"/);
+  // The hero box is the cover box (1.08x the window) and a portrait phone keeps
+  // only a slice of a landscape photograph, so `sizes` over-asks on purpose.
+  assert.match(HTML, /sizes="\(max-width: 767px\) 200vw, 108vw"/);
 
   // The largest variant is genuinely larger than the camera original, so the
   // picture is never upscaled by the browser on a wide desktop.

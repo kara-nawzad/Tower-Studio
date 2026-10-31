@@ -555,7 +555,114 @@ The two phone assertions live in `tests/pass2-phone.test.mjs`, the laptop ones i
 
 ---
 
-## 16. What was not verified (pass 2)
+## 16. Second round on the hero, the strip, the type and the sliders
+
+The first full-bleed attempt expressed the cover arithmetic in CSS
+(`width: max(100vw, 100dvh × aspect) × 1.08`). On the user's machine that still
+drew a blue band above _and_ below the picture plus a blue strip down each side:
+a `max()`/`calc()` chain built out of custom properties is exactly the sort of
+thing a browser can reject without saying so, and a rejected size falls back to
+the box's content size. Arguing with the cascade was the wrong move, so the
+arithmetic moved into JavaScript:
+
+- `heroLayout(width, height)` measures the window and returns the cover box;
+  `applyHeroLayout()` writes `--hero-w`, `--hero-h`, `--hero-x`, `--hero-y` as
+  pixels on `#hero-artwork`. It runs on load, on `resize()`, and whenever the
+  hero is opened or closed, and is exported as
+  `window.TowerStudio.applyHeroLayout`.
+- `.hero-artwork` is now a plain `left: 0; top: 0` box with
+  `width: var(--hero-w)` / `height: var(--hero-h)` and
+  `transform: translate3d(var(--hero-x), var(--hero-y), 0)` plus the tilt. The
+  CSS defaults (`100vw` / `100dvh` / `0px`) are only the no-JS fallback, and
+  `.hero-image` uses `object-fit: cover`, so even the first paint before the
+  measurement is edge to edge. No `--hero-focus-x`, no `max()`, no `contain`.
+- `sizes` on the two `<source>`s over-asks (`200vw` on a phone, `108vw` above)
+  because the box is 1.08× the window and a portrait phone only keeps ~24% of a
+  landscape photograph's width: asking for `100vw` selected the 1200 px file and
+  then stretched its 287-pixel-wide slice across a 390-pixel screen.
+- The focus is now 58% on a portrait phone (≤767), 56% on any other portrait
+  window, centred in landscape. 58% keeps the tower (62.8%) and the equipment
+  shelter (49.5%) both inside the crop — the two things the user asked to see —
+  and costs the truck and the generator, which are hidden, not half-clipped.
+
+```
+window                          focus   cover box      picture x       picture y
+360×800   (phone)               58%     1547×864 px    44.5 – 67.8%     3.7 – 96.3%
+390×844   (phone)               58%     1633×912 px    44.1 – 68.0%     3.7 – 96.3%
+430×932   (phone)               58%     1803×1007 px   44.2 – 68.0%     3.7 – 96.3%
+768×1024  (tablet portrait)     56%     1981×1106 px   34.3 – 73.1%     3.7 – 96.3%
+844×390   (phone landscape)     50%      912×509 px     3.7 – 96.3%    11.7 – 88.3%
+1024×768  (small laptop)        50%     1486×829 px    15.5 – 84.5%     3.7 – 96.3%
+1366×640  (short laptop)        50%     1475×824 px     3.7 – 96.3%    11.2 – 88.8%
+1366×768  (laptop)              50%     1486×829 px     4.0 – 96.0%     3.7 – 96.3%
+1920×1080 (desktop)             50%     2089×1166 px    4.0 – 96.0%     3.7 – 96.3%
+2560×1080 (ultrawide)           50%     2765×1544 px    3.7 – 96.3%    15.0 – 85.0%
+```
+
+Every row covers both axes, so there is nothing left for a band to be. The phone
+test asserts the written box (`--hero-w/--hero-h/--hero-x/--hero-y`) covers the
+viewport instead of asserting CSS arithmetic, and both tests now assert
+`object-fit: cover` with no `contain` anywhere.
+
+### 16.1 The strip stops cutting its labels
+
+The slim HUD strip carried the panel's long names (`CELLULAR MIXED`,
+`LAST SWEEP VSWR`), and in a 5-cell row they were rendered as
+`CELLULAR MIXE…`, `LAST SWEEP VS…`. Each catalogue entry now has a `strip:`
+short label used only by the strip, while the "All numbers" panel keeps the long
+one:
+
+| Step | Strip cells                                 |
+| ---- | ------------------------------------------- |
+| 1    | Environment · Structure · Civil · Earth     |
+| 2    | Cabinet · DC load · Backhaul · Services     |
+| 3    | AC source · Load · Backup · N+1             |
+| 4A   | RSL · Fade · Backhaul · Link                |
+| 4B   | Cellular · Sector · Sweep VSWR · Throughput |
+| 5    | Gates · Status · Alarms                     |
+
+Every strip label is ≤ 11 characters (a test enforces it) and the panel still
+renders all 24 long labels, so nothing was lost to make the row fit.
+
+### 16.2 No typewriter face
+
+`Space Mono` is gone from the project — the Google Fonts request, the CSS, the
+canvas rack label and the tests. The label/number face `--mono` is now
+`"Barlow Condensed", "Barlow", sans-serif`, so every `font: … var(--mono)` rule,
+every `--mono` label, the HUD cells, the numeric readouts and the 3D rack text
+take the project's own condensed sans.
+
+The one exception is the step-5 CLI console, which keeps a system monospace
+stack (`--term`) because columns of terminal output have to line up; it is the
+only place the platform monospace appears, and `tests/guards.test.mjs` allows at
+most six uses of it. The guard also fails on any reappearance of `Space Mono`.
+
+### 16.3 Sliders drag
+
+The sliders answered a click but not a drag because the drawer re-rendered on
+every value change: replacing the `<input>` mid-gesture destroys the pointer
+capture, so the thumb only moved where you clicked. Now:
+
+- `beginRangeDrag()` / `endRangeDrag()` bracket the gesture (`pointerdown` on an
+  `input[type="range"]`, `pointerup`/`pointercancel` on the drawer **and** on
+  `window`, so a release outside the panel still ends it);
+- `renderDrawer()` returns early while a thumb is held and remembers that it
+  owes a render, which `endRangeDrag()` flushes. The live readout, the value
+  text and the `--range-progress` fill are still written straight to the DOM on
+  `input`, so the drag is visually continuous, and the 3D scene keeps rebuilding
+  through the existing throttle;
+- the hit area is 34 px tall (thumb 24 px, Firefox 22 px) with
+  `touch-action: pan-y`, so a fat finger grabs the thumb while a vertical swipe
+  still scrolls the panel;
+- a wheel or trackpad gesture over a slider nudges it one step instead of
+  scrolling the panel out from under the pointer.
+
+`npm test` is 121 pass / 0 fail, `npm run lint` and `node scripts/build.mjs
+--check` are clean with this chapter in the tree.
+
+---
+
+## 17. What was not verified (pass 2)
 
 1. **No screenshots.** No browser binary is available in this environment, so
    `screenshots/` was not regenerated and nobody — human or model — looked at a
@@ -572,7 +679,7 @@ The two phone assertions live in `tests/pass2-phone.test.mjs`, the laptop ones i
    re-measured with `getBoundingClientRect`, which jsdom cannot answer, so the
    `--sheet-h` value in a headless run is 0.
 
-## 17. Decisions taken without asking (pass 2)
+## 18. Decisions taken without asking (pass 2)
 
 - **Gate strip = six labelled dots**, the first of the two options in A6. It
   keeps the six gates permanently visible, keeps the pass/fail vocabulary

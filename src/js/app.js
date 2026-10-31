@@ -3519,7 +3519,7 @@ function rackLabelMaterial(text, dark = true) {
   context.fillStyle = dark ? "#0F172A" : "#F8FAFC";
   context.fillRect(0, 0, 768, 128);
   context.fillStyle = dark ? "#F8FAFC" : "#0F172A";
-  context.font = "700 43px 'Space Mono', monospace";
+  context.font = "700 43px 'Barlow Condensed', sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
   const fitted = text.length > 30 ? text.slice(0, 30) : text;
@@ -7206,7 +7206,7 @@ const rect = (left, top, width, height) => ({
 });
 
 // Rough advance widths, only ever used by the arithmetic above: Barlow
-// Condensed Bold is about half an em, Space Mono about 0.6em.
+// Condensed Bold is about half an em; the old typewriter face was about 0.6em.
 const textWidth = (text, size, factor) => Math.round(String(text).length * size * factor);
 
 function overlaps(a, b) {
@@ -9194,6 +9194,23 @@ function panelSection(title, body, tag, { advanced = false } = {}) {
 // every window.TowerStudio action keeps working.
 const CARD_UI = { open: {}, fine: {}, done: {} };
 
+// A slider has to stay under the pointer for the whole drag. rebuildSite()
+// ends with renderDrawer(), and replacing the <input> mid-drag kills the drag —
+// which is why the thumb used to jump only when you clicked the track. While a
+// thumb is held, the drawer render is deferred and flushed on release.
+let rangeDrag = null;
+
+function beginRangeDrag() {
+  rangeDrag = { pending: false };
+}
+
+function endRangeDrag() {
+  if (!rangeDrag) return;
+  const pending = rangeDrag.pending;
+  rangeDrag = null;
+  if (pending) renderDrawer();
+}
+
 // A card only counts as finished once the user has actually changed something
 // inside it (or the step renderer says it was already answered). Everything
 // starts unfinished, so entering a step opens its first decision.
@@ -9997,6 +10014,11 @@ function renderSpecs() {
 }
 
 function renderDrawer() {
+  // Held slider: hold the re-render too, or the drag dies under the pointer.
+  if (rangeDrag) {
+    rangeDrag.pending = true;
+    return;
+  }
   const drawer = $("#drawer");
   drawer.classList.toggle("collapsed", !st.drawerOpen);
   const panelTab = $("#panel-tab");
@@ -10129,6 +10151,7 @@ function hudCatalog() {
     status: {
       id: "hud-site-status",
       label: "Site status",
+      strip: "Status",
       value: launch.onAir
         ? "[ On air ]"
         : st.onboarding.active
@@ -10137,71 +10160,102 @@ function hudCatalog() {
       cellClass: launch.onAir ? "hud-on-air" : "",
       short: launch.onAir ? "On air" : st.onboarding.active ? "Setting up" : "Live model",
     },
-    env: { label: "Environment", value: ENVIRONMENTS[st.env].name },
-    structure: { label: "Structure", value: `${TOWERS[st.tower].short} · ${st.H} m` },
+    env: { label: "Environment", strip: "Environment", value: ENVIRONMENTS[st.env].name },
+    structure: {
+      label: "Structure",
+      strip: "Structure",
+      value: `${TOWERS[st.tower].short} · ${st.H} m`,
+    },
     civil: {
       label: "Civil check",
+      strip: "Civil",
       value: `Twist ${civil.twist.toFixed(2)}° ${civil.twistPass ? "PASS" : "FAIL"}`,
       short: civil.twistPass ? "Civil pass" : "Civil fail",
       valueClass: civil.twistPass ? "green" : "red",
     },
     earth: {
       label: "Earth resistance",
+      strip: "Earth",
       value: Number.isFinite(civil.resistance) ? `${civil.resistance.toFixed(1)} Ω` : "OPEN",
       short: Number.isFinite(civil.resistance)
         ? `${civil.resistance.toFixed(1)} Ω earth`
         : "Earth open",
       valueClass: civil.resistancePass ? "green" : "red",
     },
-    load: { label: "Total load", value: `${power.totalLoad.toFixed(2)} kW` },
-    backup: { label: "Backup hours", value: `${power.autonomy.toFixed(1)} h` },
-    backhaul: { label: "Backhaul speed", value: formatCapacity(microwave.capacityMbps) },
-    cabinet: { label: "Cabinet", value: `${st.rack.vendor} ${cellularGeneration().label}` },
-    cabinetLoad: { label: "Cabinet DC load", value: `${rack.loadKw.toFixed(2)} kW` },
+    load: { label: "Total load", strip: "Load", value: `${power.totalLoad.toFixed(2)} kW` },
+    backup: { label: "Backup hours", strip: "Backup", value: `${power.autonomy.toFixed(1)} h` },
+    backhaul: {
+      label: "Backhaul speed",
+      strip: "Backhaul",
+      value: formatCapacity(microwave.capacityMbps),
+    },
+    cabinet: {
+      label: "Cabinet",
+      strip: "Cabinet",
+      value: `${st.rack.vendor} ${cellularGeneration().label}`,
+    },
+    cabinetLoad: {
+      label: "Cabinet DC load",
+      strip: "DC load",
+      value: `${rack.loadKw.toFixed(2)} kW`,
+    },
     services: {
       label: "Live services",
+      strip: "Services",
       value: `${rack.opticalPorts ? "5G/4G" : "no BB"} · ${rack.e1Lines} E1`,
     },
     cellular: {
       label: `Cellular ${cellularGeneration().label}`,
+      strip: "Cellular",
       value: cellularGeneration().throughput,
       live: "rf-hud-throughput",
     },
     rsl: {
       label: "Microwave RSL",
+      strip: "RSL",
       value: `${microwave.rsl.toFixed(1)} dBm`,
       valueClass: microwave.locked ? "green" : "amber",
     },
-    fade: { label: "Fade margin", value: `${microwave.fadeMargin.toFixed(1)} dB` },
+    fade: { label: "Fade margin", strip: "Fade", value: `${microwave.fadeMargin.toFixed(1)} dB` },
     link: {
       label: "Link status",
+      strip: "Link",
       value: microwave.locked ? "LOCKED" : "SEEKING",
       valueClass: microwave.locked ? "green" : "amber",
     },
     sector: {
       label: "Sector status",
+      strip: "Sector",
       value: `S${st.cellular.sector + 1} ${sector.onAir ? "ON AIR" : "MUTED"}`,
       valueClass: sector.onAir ? "green" : "red",
     },
     vswr: {
       label: "Last sweep VSWR",
+      strip: "Sweep VSWR",
       value: sweep ? sweep.max.toFixed(2) : "not run",
       valueClass: sweep ? (sweep.pass ? "green" : "red") : "",
     },
-    throughput: { label: "Throughput", value: cellularGeneration().throughput },
-    source: { label: "AC source", value: sourceLabel() },
+    throughput: {
+      label: "Throughput",
+      strip: "Throughput",
+      value: cellularGeneration().throughput,
+    },
+    source: { label: "AC source", strip: "AC source", value: sourceLabel() },
     n1: {
       label: "Rectifier N+1",
+      strip: "N+1",
       value: `${power.n1Pass ? "PASS" : "WARN"} · ${power.installed}/${power.required + 1}`,
       valueClass: power.n1Pass ? "green" : "red",
     },
     gates: {
       label: "Gates passed",
+      strip: "Gates",
       value: `${passed}/6`,
       valueClass: audit.pass ? "green" : "",
     },
     alarms: {
       label: "Active alarms",
+      strip: "Alarms",
       value: alarms.length ? String(alarms.length) : "None",
       valueClass: alarms.length ? "red" : "green",
     },
@@ -10293,7 +10347,13 @@ function updateHUD() {
   const stepKeys = setup ? null : HUD_STEP_KEYS[hudStepKey()] || HUD_STEP_KEYS[1];
   const stripCells = setup
     ? setupCells
-    : stepKeys.map((key) => ({ key, ...catalog[key] })).filter((cell) => cell.value !== undefined);
+    : stepKeys
+        .map((key) => ({ key, ...catalog[key] }))
+        .filter((cell) => cell.value !== undefined)
+        // The strip is one row of narrow cells, so it uses the short label the
+        // panel does not need: "DC load", never "Cabinet DC load" cut to
+        // "Cabinet DC…".
+        .map((cell) => ({ ...cell, label: cell.strip || cell.label }));
   // The panel repeats the strip's numbers, so it never carries the strip's ids.
   const allCells = setup
     ? setupCells.map(({ id: _id, ...cell }) => cell)
@@ -10858,13 +10918,27 @@ function updatePowerSimulation(now, dt) {
 const HERO_ASPECT = 1.791045; // herotower-*.webp is 1200 x 670
 const HERO_BLEED = 1.08; // headroom for the pointer parallax and the tilt
 
+// The two things a phone must always show: the lattice tower (x = 62.8% of the
+// picture) and the equipment shelter that houses the RBS (x = 49.5%). Their
+// midpoint is 56%; the crop is centred just right of it so the tower keeps a
+// little air and the shelter stays clear of the left edge.
 function heroFocus(width = window.innerWidth, height = window.innerHeight) {
-  // A landscape window crops only a few per cent, so the picture stays centred.
-  // A portrait window keeps a narrow slice of the width, so the focus slides
-  // right to keep the tower, shelter and generator in frame instead of the
-  // empty valley on the left of the picture.
-  if (height < width) return { x: 0.5, y: 0.5 };
-  return { x: width <= 767 ? 0.6 : 0.58, y: 0.5 };
+  if (height < width) return { x: 0.5, y: 0.5 }; // landscape: centred
+  return { x: width <= 767 ? 0.58 : 0.56, y: 0.5 };
+}
+
+// Writes the measured geometry onto the artwork element. CSS alone cannot be
+// trusted here: a silently dropped max()/calc() chain is a letterbox, and that
+// is exactly what used to happen.
+function applyHeroLayout() {
+  const art = $("#hero-artwork");
+  if (!art) return null;
+  const layout = heroLayout();
+  art.style.setProperty("--hero-w", `${layout.boxWidth.toFixed(1)}px`);
+  art.style.setProperty("--hero-h", `${layout.boxHeight.toFixed(1)}px`);
+  art.style.setProperty("--hero-x", `${layout.left.toFixed(1)}px`);
+  art.style.setProperty("--hero-y", `${layout.top.toFixed(1)}px`);
+  return layout;
 }
 
 // Where the artwork box sits, and which part of the picture survives the crop,
@@ -10984,6 +11058,7 @@ function updateHeroMotion(dt = 0.016) {
 
 function setHeroOpen(open) {
   st.heroOpen = Boolean(open);
+  applyHeroLayout();
   document.body.classList.toggle("hero-active", st.heroOpen);
   const hero = $("#hero-tab");
   if (hero) {
@@ -11909,6 +11984,40 @@ $("#drawer").addEventListener("input", (event) => {
   scheduleRebuild();
 });
 
+// --- sliders: hold to drag, wheel to nudge ---------------------------------
+const SLIDER_SELECTOR = 'input[type="range"]';
+
+$("#drawer").addEventListener("pointerdown", (event) => {
+  if (event.target.matches(SLIDER_SELECTOR)) beginRangeDrag();
+});
+$("#drawer").addEventListener("pointerup", endRangeDrag);
+$("#drawer").addEventListener("pointercancel", endRangeDrag);
+window.addEventListener("pointerup", endRangeDrag);
+window.addEventListener("pointercancel", endRangeDrag);
+
+// A wheel over a slider nudges it instead of scrolling the panel underneath:
+// the user asked for every slider to move under the pointer, and a precision
+// control is exactly where one notch of wheel beats a scroll.
+$("#drawer").addEventListener(
+  "wheel",
+  (event) => {
+    const slider = event.target.closest(SLIDER_SELECTOR);
+    if (!slider) return;
+    const min = Number(slider.min || 0);
+    const max = Number(slider.max || 100);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return;
+    const step = Number(slider.step) || (max - min) / 100;
+    const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
+    if (!delta) return;
+    event.preventDefault();
+    const next = clamp(Number(slider.value) - Math.sign(delta) * step, min, max);
+    if (next === Number(slider.value)) return;
+    slider.value = String(Number(next.toFixed(4)));
+    slider.dispatchEvent(new window.Event("input", { bubbles: true }));
+  },
+  { passive: false }
+);
+
 $("#drawer").addEventListener("change", (event) => {
   const selectAction = event.target.dataset.selectAction;
   if (selectAction) {
@@ -12259,6 +12368,7 @@ function fitSite(immediate = false) {
 
 function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  applyHeroLayout();
   // The camera framing depends on the real drawer/sheet size, so re-measure
   // before anything reads it.
   measureChrome();
@@ -12645,6 +12755,7 @@ window.TowerStudio.chromeMetrics = chromeMetrics;
 // The chrome arithmetic the pass-2 layout tests measure against.
 window.TowerStudio.chromeLayout = chromeLayout;
 window.TowerStudio.heroLayout = heroLayout;
+window.TowerStudio.applyHeroLayout = applyHeroLayout;
 window.TowerStudio.heroFocus = heroFocus;
 window.TowerStudio.HERO_ASPECT = HERO_ASPECT;
 window.TowerStudio.HERO_BLEED = HERO_BLEED;

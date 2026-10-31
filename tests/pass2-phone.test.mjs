@@ -421,18 +421,29 @@ test("the hero is full-bleed on a phone: no letterbox, and the site stays in fra
     dom.window.close();
   }
 
-  // Portrait focus and the bleed are written down in both places.
+  // The geometry is measured in app.js and written onto the element, because a
+  // silently dropped max()/calc() chain is exactly what letterboxed the hero.
+  {
+    const phone = createHeadlessStudio({ width: 390, height: 844 });
+    const art = phone.document.getElementById("hero-artwork");
+    assert.ok(art, "the artwork element exists");
+    const layout = phone.studio.applyHeroLayout();
+    assert.ok(layout, "the layout is measurable");
+    const read = (name) => Number(art.style.getPropertyValue(name).replace("px", ""));
+    const w = read("--hero-w");
+    const h = read("--hero-h");
+    const x = read("--hero-x");
+    const y = read("--hero-y");
+    assert.ok(w >= 390 && h >= 844, "the written box covers the viewport");
+    assert.ok(x <= 0 && y <= 0, "and starts at or before the origin");
+    assert.ok(x + w >= 390 && y + h >= 844, "and reaches past the far edges");
+    phone.dom.window.close();
+  }
+  // The stylesheet keeps a no-JS fallback that is also edge to edge.
   assert.match(CSS, /--hero-aspect:\s*1\.791045/);
-  assert.match(
-    CSS,
-    /@media \(max-width: 767px\) and \(orientation: portrait\) \{\s*\.hero-artwork \{\s*--hero-focus-x: 60%/s
-  );
-  assert.match(
-    CSS,
-    /@media \(orientation: portrait\) \{\s*\.hero-artwork \{\s*--hero-focus-x: 58%/s
-  );
-  assert.match(CSS, /--hero-bleed:\s*1\.08/);
-  assert.match(CSS, /\.hero-artwork\s*\{[^}]*width:\s*max\(/s);
+  assert.match(CSS, /--hero-w:\s*100vw/);
+  assert.match(CSS, /object-fit:\s*cover/);
+  assert.doesNotMatch(CSS, /object-fit:\s*contain/);
 
   // Nothing letterboxes the picture any more, and the letterbox filler is gone.
   assert.doesNotMatch(HTML, /hero-backdrop/);
