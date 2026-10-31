@@ -117,15 +117,36 @@ test("the Three.js loader is pinned, integrity-checked and has a local fallback"
 
 test("the hero image ships WebP and AVIF variants behind the original PNG", () => {
   assert.match(HTML, /<picture>/);
-  assert.match(HTML, /herotower\.avif/);
-  assert.match(HTML, /herotower\.webp/);
-  assert.match(HTML, /herotower\.PNG/);
+  assert.match(HTML, /herotower-1200\.avif/);
+  assert.match(HTML, /herotower-1200\.webp/);
+  assert.match(HTML, /src="\.\/herotower\.PNG"/, "the PNG stays as the last fallback");
 
   const png = fs.statSync(path.join(ROOT_DIR, "herotower.PNG")).size;
-  const webp = fs.statSync(path.join(ROOT_DIR, "herotower.webp")).size;
-  const avif = fs.statSync(path.join(ROOT_DIR, "herotower.avif")).size;
-  assert.ok(webp < png * 0.5, `WebP ${webp} is far smaller than PNG ${png}`);
-  assert.ok(avif < webp, `AVIF ${avif} is smaller than WebP ${webp}`);
+
+  // Three widths per encoding, so a 4K desktop gets a real 2200px file instead
+  // of an upscaled 1678px one, and a phone gets the 1200px one.
+  for (const width of [1200, 1678, 2200]) {
+    const webp = fs.statSync(path.join(ROOT_DIR, `herotower-${width}.webp`)).size;
+    const avif = fs.statSync(path.join(ROOT_DIR, `herotower-${width}.avif`)).size;
+    assert.ok(webp < png * 0.5, `WebP ${width} (${webp}) is far smaller than PNG ${png}`);
+    assert.ok(avif < webp, `AVIF ${width} (${avif}) is smaller than WebP ${webp}`);
+    for (const ext of ["webp", "avif"]) {
+      assert.match(
+        HTML,
+        new RegExp(`herotower-${width}\.${ext} ${width}w`),
+        `${ext} ${width} is offered in the srcset`
+      );
+    }
+  }
+  assert.match(HTML, /sizes="100vw"/);
+
+  // The largest variant is genuinely larger than the camera original, so the
+  // picture is never upscaled by the browser on a wide desktop.
+  const widest = Number(
+    fs.readFileSync(path.join(ROOT_DIR, "herotower.PNG")).slice(16, 24).readUInt32BE(0)
+  );
+  assert.equal(widest, 1678, "the original PNG is still 1678px wide");
+  assert.ok(fs.existsSync(path.join(ROOT_DIR, "herotower-2200.avif")));
 
   // The original PNG is untouched, so nothing about the artwork changed.
   assert.equal(png, 3341876);
@@ -133,7 +154,9 @@ test("the hero image ships WebP and AVIF variants behind the original PNG", () =
 
 test("the build copies the vendor directory and every hero encoding", () => {
   const build = fs.readFileSync(path.join(ROOT_DIR, "scripts/build.mjs"), "utf8");
-  assert.match(build, /herotower\.webp/);
-  assert.match(build, /herotower\.avif/);
+  for (const width of [1200, 1678, 2200]) {
+    assert.match(build, new RegExp(`herotower-${width}\\.webp`));
+    assert.match(build, new RegExp(`herotower-${width}\\.avif`));
+  }
   assert.match(build, /vendor/);
 });

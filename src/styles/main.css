@@ -671,11 +671,19 @@ body.hero-active .viewport-note {
 }
 
 .hero-artwork {
+  /*
+    Zoomed out and fitted: the whole illustration sits inside the stage with a
+    small margin, so nothing is cropped on a phone or on a laptop. The box keeps
+    the artwork's own aspect ratio, which means object-fit can never distort it
+    either. The blur layer behind it fills the remaining stage with the same
+    colours instead of empty paper.
+  */
+  --hero-fit: 0.94;
   position: absolute;
   left: 50%;
   top: 50%;
-  width: max(108vw, calc(108vh * var(--hero-aspect)));
-  height: max(108vh, calc(108vw / var(--hero-aspect)));
+  width: min(calc(94vw), calc(94vh * var(--hero-aspect)));
+  height: min(calc(94vh), calc(94vw / var(--hero-aspect)));
   transform: translate3d(calc(-50% + var(--hero-px, 0px)), calc(-50% + var(--hero-py, 0px)), 0)
     rotateX(var(--hero-rx, 0deg)) rotateY(var(--hero-ry, 0deg));
   transform-style: preserve-3d;
@@ -683,12 +691,164 @@ body.hero-active .viewport-note {
   user-select: none;
 }
 
+/* A defocused copy of the same picture fills the letterbox on any shape of
+   screen, so the fitted artwork never floats on empty paper. */
+.hero-backdrop {
+  position: absolute;
+  inset: -14%;
+  pointer-events: none;
+  background-image: url("./herotower-1200.webp"), url("./herotower.PNG");
+  background-size: cover;
+  background-position: center;
+  filter: blur(42px) saturate(1.1);
+  transform: scale(1.2);
+  opacity: 0.62;
+}
+
 .hero-image {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
   pointer-events: none;
+}
+
+/* Slow cloud / tree shadows crossing the ground: the cheapest way to make a
+   still picture feel like it is under a moving sky. */
+.hero-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: 0.3;
+  background:
+    radial-gradient(ellipse 26% 12% at 12% 74%, rgba(30, 41, 59, 0.5), transparent 70%),
+    radial-gradient(ellipse 22% 9% at 46% 82%, rgba(30, 41, 59, 0.42), transparent 72%),
+    radial-gradient(ellipse 30% 11% at 78% 69%, rgba(30, 41, 59, 0.38), transparent 74%);
+  animation: heroShadeDrift 46s linear infinite;
+}
+
+/* The lake: two swells running against each other plus drifting sun glitter. */
+.hero-water {
+  position: absolute;
+  left: 43.5%;
+  top: 31%;
+  width: 43%;
+  height: 15.5%;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 50%;
+  -webkit-mask-image: radial-gradient(ellipse 48% 44% at 50% 50%, #000 30%, transparent 76%);
+  mask-image: radial-gradient(ellipse 48% 44% at 50% 50%, #000 30%, transparent 76%);
+}
+.hero-water span {
+  position: absolute;
+  inset: -20% -30%;
+}
+.hero-water-swell {
+  background: repeating-linear-gradient(
+    -12deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(191, 233, 255, 0.34) 9px,
+    rgba(255, 255, 255, 0) 20px
+  );
+  mix-blend-mode: screen;
+  opacity: 0.34;
+  animation: heroWaterSwell 7s ease-in-out infinite alternate;
+}
+.hero-water-swell.deep {
+  background: repeating-linear-gradient(
+    -6deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(148, 205, 235, 0.3) 13px,
+    rgba(255, 255, 255, 0) 28px
+  );
+  opacity: 0.26;
+  animation-duration: 11s;
+  animation-direction: alternate-reverse;
+}
+.hero-water-glint {
+  background:
+    radial-gradient(circle 2px at 18% 42%, rgba(255, 255, 255, 0.95), transparent 60%),
+    radial-gradient(circle 1.5px at 34% 61%, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(circle 2.5px at 52% 38%, rgba(255, 255, 255, 0.85), transparent 60%),
+    radial-gradient(circle 1.5px at 66% 66%, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(circle 2px at 79% 47%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(circle 1.5px at 88% 58%, rgba(255, 255, 255, 0.85), transparent 60%);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  animation: heroWaterGlint 5.5s ease-in-out infinite alternate;
+}
+
+/* Wind: three soft gusts sweeping across the scene at different heights. */
+.hero-wind {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 4%, #000 26%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 4%, #000 26%, #000 88%, transparent 100%);
+}
+.hero-wind span {
+  position: absolute;
+  left: -60%;
+  width: 120%;
+  height: 34%;
+  background: repeating-linear-gradient(
+    74deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(255, 255, 255, 0.16) 22px,
+    rgba(255, 255, 255, 0) 54px
+  );
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+.hero-wind span:nth-child(1) {
+  top: 20%;
+  animation: heroGust 13s linear -2s infinite;
+}
+.hero-wind span:nth-child(2) {
+  top: 46%;
+  height: 26%;
+  animation: heroGust 17s linear -8s infinite;
+}
+.hero-wind span:nth-child(3) {
+  top: 62%;
+  height: 30%;
+  animation: heroGust 21s linear -14s infinite;
+}
+
+/* Grass along the bottom edge: real blades that bend with the same gusts. */
+.hero-grass {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 11%;
+  pointer-events: none;
+}
+.hero-blade {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: #2f6b3a;
+  transform-origin: 50% 100%;
+  opacity: 0.72;
+  animation: heroBladeSway var(--blade-dur, 4.2s) ease-in-out var(--blade-delay, 0s) infinite
+    alternate;
+}
+/* Drifting seeds and leaves riding the wind. */
+.hero-seed {
+  position: absolute;
+  top: var(--seed-y, 55%);
+  left: var(--seed-x, 20%);
+  width: var(--seed-size, 7px);
+  height: calc(var(--seed-size, 7px) * 0.55);
+  border-radius: 60% 10% 60% 10%;
+  background: rgba(122, 158, 92, 0.85);
+  opacity: 0;
+  animation: heroSeedDrift var(--seed-dur, 16s) linear var(--seed-delay, 0s) infinite;
 }
 
 /* Subtle "Living Nature" ambient micro-layers */
@@ -818,6 +978,81 @@ body.hero-active .viewport-note {
   50% {
     opacity: 1;
     transform: translate(-50%, -50%) scale(1.42);
+  }
+}
+
+@keyframes heroShadeDrift {
+  0% {
+    transform: translate3d(-4%, 0, 0);
+  }
+  50% {
+    transform: translate3d(4%, 0.8%, 0);
+  }
+  100% {
+    transform: translate3d(-4%, 0, 0);
+  }
+}
+
+@keyframes heroWaterSwell {
+  0% {
+    transform: translate3d(-3%, 0, 0) scaleY(0.96);
+  }
+  100% {
+    transform: translate3d(3%, 1.5%, 0) scaleY(1.06);
+  }
+}
+
+@keyframes heroWaterGlint {
+  0% {
+    opacity: 0.24;
+    transform: translate3d(-2%, 0.5%, 0) scale(1);
+  }
+  100% {
+    opacity: 0.62;
+    transform: translate3d(2.5%, -0.8%, 0) scale(1.06);
+  }
+}
+
+@keyframes heroGust {
+  0% {
+    opacity: 0;
+    transform: translate3d(-8%, 0, 0) skewX(-6deg);
+  }
+  22% {
+    opacity: 0.5;
+  }
+  74% {
+    opacity: 0.34;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(22%, -3%, 0) skewX(-6deg);
+  }
+}
+
+@keyframes heroBladeSway {
+  0% {
+    transform: rotate(-5deg) skewX(-3deg);
+  }
+  100% {
+    transform: rotate(6deg) skewX(4deg);
+  }
+}
+
+@keyframes heroSeedDrift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  12% {
+    opacity: 0.85;
+  }
+  84% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(34vw, -14vh, 0) rotate(540deg);
   }
 }
 
@@ -4268,19 +4503,27 @@ input[type="range"]::-moz-range-thumb {
     overflow: hidden;
     touch-action: none;
   }
+  /*
+    Phone: the old rule sized the artwork to 82vh and let the sides fall off the
+    screen, so most of the scene was cropped away. The whole picture now fits
+    the width and floats above the bottom edge, with the blurred copy of itself
+    filling the gap.
+  */
   .hero-artwork {
-    position: absolute;
-    left: 50%;
     top: auto;
-    bottom: 0;
-    height: 82vh;
-    height: 82dvh;
-    width: calc(82vh * var(--hero-aspect));
-    width: calc(82dvh * var(--hero-aspect));
-    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 5.5%, #000 100%);
-    mask-image: linear-gradient(180deg, transparent 0%, #000 5.5%, #000 100%);
-    transform: translate3d(calc(-56.5% + var(--hero-px, 0px)), calc(var(--hero-py, 0px)), 0)
+    bottom: 18vh;
+    bottom: 18dvh;
+    width: min(94vw, calc(94vh * var(--hero-aspect)));
+    height: min(calc(94vh), calc(94vw / var(--hero-aspect)));
+    transform: translate3d(calc(-50% + var(--hero-px, 0px)), calc(var(--hero-py, 0px)), 0)
       rotateY(var(--hero-ry, 0deg));
+  }
+  .hero-backdrop {
+    filter: blur(34px) saturate(1.12);
+    opacity: 0.7;
+  }
+  .hero-grass {
+    height: 13%;
   }
   .hero-brand-card {
     position: absolute;
@@ -4455,6 +4698,12 @@ input[type="range"]::-moz-range-thumb {
   .hero-sky-drift,
   .hero-lake-shimmer,
   .hero-beacon-pulse,
+  .hero-shade,
+  .hero-water-swell,
+  .hero-water-glint,
+  .hero-wind span,
+  .hero-blade,
+  .hero-seed,
   .hero-mote,
   .hero-pin::after {
     animation: none !important;

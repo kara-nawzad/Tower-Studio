@@ -9767,6 +9767,66 @@ function setHeroOpen(open) {
   }
 }
 
+// -------------------------------------------------------------------------
+// Living hero: grass that bends with the gusts and seeds riding them.
+// Everything is decorative, so reduced-motion users get the still picture.
+// -------------------------------------------------------------------------
+const HERO_BLADES = [
+  [3, 9, 5.2, -0.4],
+  [7, 13, 4.1, -1.6],
+  [11, 8, 5.8, -0.9],
+  [15, 15, 3.6, -2.4],
+  [19, 10, 4.9, -1.1],
+  [24, 14, 4.2, -3.1],
+  [28, 7, 6.1, -0.6],
+  [33, 12, 4.4, -2.0],
+  [38, 16, 3.4, -1.4],
+  [43, 9, 5.5, -2.8],
+  [48, 13, 4.0, -0.3],
+  [53, 8, 5.9, -1.9],
+  [58, 15, 3.7, -2.6],
+  [63, 10, 5.0, -1.2],
+  [68, 12, 4.3, -3.4],
+  [73, 8, 5.4, -0.8],
+  [78, 14, 3.9, -2.2],
+  [83, 10, 5.1, -1.5],
+  [88, 13, 4.5, -3.0],
+  [93, 9, 5.6, -0.5],
+  [96, 12, 4.1, -1.8],
+];
+
+const HERO_SEEDS = [
+  [8, 58, 8, 17, -1],
+  [22, 44, 6, 21, -8],
+  [37, 66, 9, 15, -4],
+  [52, 52, 7, 19, -12],
+  [66, 71, 8, 23, -6],
+  [81, 47, 6, 18, -14],
+];
+
+function buildHeroWindLayer() {
+  if (reducedMotionQuery.matches) return;
+  const grass = $("#hero-grass");
+  if (grass && !grass.children.length) {
+    grass.innerHTML = HERO_BLADES.map(
+      ([x, height, dur, delay]) =>
+        `<span class="hero-blade" style="left:${x}%;height:${height}%;--blade-dur:${dur}s;--blade-delay:${delay}s"></span>`
+    ).join("");
+  }
+  // The seeds ride the same ambient layer as the motes, not the gust layer:
+  // .hero-wind span is the gust gradient and would repaint them as streaks.
+  const seeds = $("#hero-breeze");
+  if (seeds && !seeds.querySelector(".hero-seed")) {
+    seeds.insertAdjacentHTML(
+      "beforeend",
+      HERO_SEEDS.map(
+        ([x, y, size, dur, delay]) =>
+          `<span class="hero-seed" style="--seed-x:${x}%;--seed-y:${y}%;--seed-size:${size}px;--seed-dur:${dur}s;--seed-delay:${delay}s"></span>`
+      ).join("")
+    );
+  }
+}
+
 function initHeroTab() {
   const hero = $("#hero-tab");
   const enterBtn = $("#hero-enter-btn");
@@ -9798,6 +9858,8 @@ function initHeroTab() {
       )
       .join("");
   }
+
+  buildHeroWindLayer();
 
   enterBtn?.addEventListener("click", () => {
     setHeroOpen(false);

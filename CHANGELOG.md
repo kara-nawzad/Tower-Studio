@@ -72,6 +72,31 @@ cabinet`, `03 Power`, `04 Aim & Connect` → `4A Backhaul` / `4B Sectors`,
 ### Removed
 
 - Dead code and unreachable branches identified during the Phase 1 audit.
+- **All sounds.** The ATS contactor click, the on-air frequency-lock chime and
+  the microwave alignment tone are gone, together with the Web Audio context,
+  oscillators and gain nodes. Every power event that used to make a noise still
+  runs exactly as before — only the noise was deleted.
+
+### Fixed after review
+
+- **Hero sharpness and framing.** The artwork shipped as a single 1600 px file
+  stretched to 108 % of the viewport with `object-fit: fill`, which both blurred
+  it on a large screen and cropped most of it away on a phone. It now ships in
+  three widths (1200 / 1678 / 2200) in AVIF _and_ WebP behind the untouched PNG,
+  so the browser downloads a picture at or above its rendered size, and the box
+  is fitted at 94 % with the artwork's own aspect ratio — the whole scene is
+  visible and undistorted on every screen. A defocused copy of the picture fills
+  the letterbox instead of empty paper.
+- **Living hero.** Added drifting cloud shadows over the ground, two counter-
+  running lake swells with sun glitter, three wind gusts, 21 grass blades along
+  the bottom edge that bend with the gusts, and six drifting seeds — all CSS, all
+  disabled under `prefers-reduced-motion`.
+- **One typeface set.** `<code>`, `<kbd>`, `<samp>` and `<pre>` were falling back
+  to the browser's monospace; the step 04 Backhaul/Sectors chips, the AI search
+  field, the AI blueprint chips and the drawer toggle all carried emoji that
+  rendered in the system colour font. Every one of them is now drawn in CSS or
+  set in Barlow, Barlow Condensed or Space Mono, and the PASS/FAIL, alarm and
+  acceptance ticks and crosses are drawn with borders instead of typed glyphs.
 
 ### Tooling
 

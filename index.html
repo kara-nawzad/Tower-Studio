@@ -22,9 +22,32 @@
             WebP, then the original PNG; the PNG at 3.2 MB is now only a
             fallback for very old browsers.
           -->
+          <!--
+            The same hero artwork in three encodings and three widths. Browsers
+            pick AVIF, then WebP, then the original PNG; the width set keeps the
+            picture at or above its rendered size so it is never upscaled. The
+            PNG at 3.2 MB is now only a fallback for very old browsers.
+          -->
+          <div class="hero-backdrop" aria-hidden="true"></div>
           <picture>
-            <source srcset="./herotower.avif" type="image/avif" />
-            <source srcset="./herotower.webp" type="image/webp" />
+            <source
+              type="image/avif"
+              sizes="100vw"
+              srcset="
+                ./herotower-1200.avif 1200w,
+                ./herotower-1678.avif 1678w,
+                ./herotower-2200.avif 2200w
+              "
+            />
+            <source
+              type="image/webp"
+              sizes="100vw"
+              srcset="
+                ./herotower-1200.webp 1200w,
+                ./herotower-1678.webp 1678w,
+                ./herotower-2200.webp 2200w
+              "
+            />
             <img
               class="hero-image"
               src="./herotower.PNG"
@@ -32,9 +55,21 @@
               draggable="false"
             />
           </picture>
+          <div class="hero-shade" aria-hidden="true"></div>
           <div class="hero-sunlight" aria-hidden="true"></div>
           <div class="hero-sky-drift" aria-hidden="true"></div>
+          <div class="hero-water" aria-hidden="true">
+            <span class="hero-water-swell"></span>
+            <span class="hero-water-swell deep"></span>
+            <span class="hero-water-glint"></span>
+          </div>
           <div class="hero-lake-shimmer" aria-hidden="true"></div>
+          <div class="hero-grass" id="hero-grass" aria-hidden="true"></div>
+          <div class="hero-wind" id="hero-wind" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
           <div class="hero-beacon-pulse" aria-hidden="true"></div>
           <div class="hero-breeze" id="hero-breeze" aria-hidden="true"></div>
 
