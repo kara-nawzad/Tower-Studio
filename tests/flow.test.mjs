@@ -120,10 +120,23 @@ test("the drawer is one scrolling panel with no tabs and no duplicated controls"
   const tabs = document.querySelector("#drawer .tabs");
   assert.equal(tabs.hidden, true, "the three tabs are replaced by one panel");
 
+  // Guided mode keeps the deep numbers folded behind "More options".
   const headings = [...document.querySelectorAll(".panel-heading h3")].map((node) =>
     node.textContent.trim()
   );
-  assert.deepEqual(headings, ["Live numbers", "Configure", "Specs and details"]);
+  assert.deepEqual(headings, ["Live numbers", "Configure"]);
+  const more = document.querySelector(".more-options > summary");
+  assert.ok(more, "the details are folded in Guided mode");
+  assert.match(more.textContent, /Specs and details/i);
+
+  studio.setDetailLevel("ENGINEER");
+  studio.renderDrawer();
+  const engineerHeadings = [...document.querySelectorAll(".panel-heading h3")].map((node) =>
+    node.textContent.trim()
+  );
+  assert.deepEqual(engineerHeadings, ["Live numbers", "Configure", "Specs and details"]);
+  assert.equal(document.querySelector(".more-options"), null, "Engineer mode opens everything");
+  studio.setDetailLevel("GUIDED");
 
   const content = document.querySelector("#drawer-content");
   // No control id may appear twice in a single scroll.

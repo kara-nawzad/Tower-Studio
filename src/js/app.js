@@ -5764,10 +5764,10 @@ function renderRackMetrics() {
     rack.e1Lines ? `${rack.e1Lines} E1` : "NO TDM",
   ].join(" · ");
   return `<div class="rack-metrics">
-    <div class="rack-metric"><small>CABINET DC</small><strong data-live="rack-load">${rack.loadKw.toFixed(3)} kW</strong></div>
-    <div class="rack-metric"><small>BACKUP HOURS</small><strong data-live="rack-autonomy">${power.autonomy.toFixed(2)} h</strong></div>
-    <div class="rack-metric"><small>BACKHAUL</small><strong data-live="rack-gbps">${rack.backhaulGbps} Gbps</strong></div>
-    <div class="rack-metric"><small>LIVE SERVICES</small><strong data-live="rack-services">${services}</strong></div>
+    <div class="rack-metric"><small>${Term("DC LOAD", "CABINET DC")}</small><strong data-live="rack-load">${rack.loadKw.toFixed(3)} kW</strong></div>
+    <div class="rack-metric"><small>${Term("AUTONOMY", "BACKUP HOURS")}</small><strong data-live="rack-autonomy">${power.autonomy.toFixed(2)} h</strong></div>
+    <div class="rack-metric"><small>${Term("BACKHAUL")}</small><strong data-live="rack-gbps">${rack.backhaulGbps} Gbps</strong></div>
+    <div class="rack-metric"><small>${Term("SECTOR", "LIVE SERVICES")}</small><strong data-live="rack-services">${services}</strong></div>
   </div>`;
 }
 
@@ -6045,7 +6045,7 @@ function renderMwSystemToggle() {
 
 function renderMwMetrics() {
   const mw = calculateMicrowave();
-  return `<div class="mw-metrics"><div class="mw-metric"><small>BACKHAUL SPEED</small><strong data-live="mw-capacity">${formatCapacity(mw.capacityMbps)}</strong></div><div class="mw-metric"><small>RSL</small><strong data-live="mw-rsl">${mw.rsl.toFixed(1)} dBm</strong></div><div class="mw-metric"><small>FADE MARGIN</small><strong data-live="mw-fade">${mw.fadeMargin.toFixed(1)} dB</strong></div><div class="mw-metric"><small>ANTENNA GAIN</small><strong data-live="mw-gain">${mw.gain.toFixed(2)} dBi</strong></div></div>`;
+  return `<div class="mw-metrics"><div class="mw-metric"><small>${Term("BACKHAUL", "BACKHAUL SPEED")}</small><strong data-live="mw-capacity">${formatCapacity(mw.capacityMbps)}</strong></div><div class="mw-metric"><small>${Term("RSL")}</small><strong data-live="mw-rsl">${mw.rsl.toFixed(1)} dBm</strong></div><div class="mw-metric"><small>${Term("FADE MARGIN")}</small><strong data-live="mw-fade">${mw.fadeMargin.toFixed(1)} dB</strong></div><div class="mw-metric"><small>ANTENNA GAIN (${Term("dBi")})</small><strong data-live="mw-gain">${mw.gain.toFixed(2)} dBi</strong></div></div>`;
 }
 
 function renderMwMeter() {
@@ -8573,14 +8573,109 @@ function renderOnboardingStep1() {
     }`;
 }
 
+// -------------------------------------------------------------------------
+// Detail level and glossary (Phase 5)
+// -------------------------------------------------------------------------
+// Plain-English definitions for the jargon a beginner meets in the first five
+// minutes. Every Term() call in the interface must have an entry here;
+// tests/glossary.test.mjs fails otherwise.
+const GLOSSARY = {
+  VSWR: "Voltage Standing Wave Ratio: how much of the radio's power bounces back down the cable instead of radiating. 1.00 is perfect; above 1.32 the line fails acceptance.",
+  DTF: "Distance To Fault: the Site Master converts reflections into a distance, so you can walk to the exact metre where the cable or connector is damaged.",
+  RSL: "Received Signal Level: how strong the far-end signal is at this dish, in dBm. Closer to zero is stronger.",
+  "FADE MARGIN":
+    "The spare signal strength, in dB, before rain or turbulence drops the link. 30 dB or more is the usual target.",
+  "N+1":
+    "One more rectifier module than the site strictly needs, so a module can fail without dropping the site.",
+  AUTONOMY:
+    "How many hours the batteries can carry the full site load with no mains and no generator.",
+  ATS: "Automatic Transfer Switch: the interlocked panel that decides whether the site runs on mains or generator, never both.",
+  "EARTH LOOP":
+    "The resistance of the whole grounding system, in ohms. Below 5 Ω is the usual acceptance target.",
+  "DEAD LOAD": "The weight of the steel itself, in kilonewtons, before wind, ice or antennas.",
+  "WIND AREA":
+    "The silhouette the tower presents to the wind, in square metres. More area means more overturning force.",
+  TORSION:
+    "Twist. A microwave dish bolted to a twisting mast loses alignment, so the check limit is 0.5 degrees at 120 km/h.",
+  "SOIL BEARING":
+    "How much pressure the ground can take before it settles, in kilopascals. It decides the foundation size.",
+  BACKHAUL:
+    "The link that carries all site traffic back to the core network — microwave dishes here, or fibre where it exists.",
+  XPIC: "Cross-Polarization Interference Cancellation: sends two streams on the same frequency using polarisations at right angles, doubling capacity.",
+  "SPACE DIVERSITY":
+    "Two dishes stacked vertically so that a reflected ground path cannot fade both at once.",
+  SECTOR:
+    "One of three antennas, each covering roughly 120 degrees, that together cover the full circle around the tower.",
+  BASEBAND:
+    "The card that turns phone and data traffic into the digital streams the radios transmit.",
+  "PATCH CABLE":
+    "The physical lead between two cards. A circuit only comes up when the cable is actually connected.",
+  "ALARM HIGHWAY":
+    "The chain of cards that carries an external alarm from the equipment to the NOC: sensor, hub, protection, then the alarm unit.",
+  "ON AIR": "The site has passed every acceptance gate and all three sectors are radiating.",
+  "CONFIGURATION VERSION":
+    "A saved snapshot of the whole site configuration that can be rolled back later, like a commit.",
+  "DC LOAD":
+    "Everything the site draws from the -48 V battery-backed bus: radios, cards and the microwave indoor unit.",
+  CLI: "Command Line Interface: the text console a field engineer uses, with the same command vocabulary as the real vendor equipment.",
+  MO: "Managed Object: one addressable item in the vendor's configuration tree, such as a sector, a board or a port.",
+  dBi: "Antenna gain compared with a theoretical isotropic radiator. Every 3 dBi doubles the effective power.",
+  dBm: "Power compared with one milliwatt. 46 dBm is 40 watts, a typical radio output.",
+  E1: "A 2.048 Mbit/s digital circuit; eight of them are a classic 16 Mbit/s site backhaul.",
+  HVAC: "Heating, ventilation and air conditioning — the shelter cooling that keeps the batteries and cards inside their limits.",
+};
+
+const GLOSSARY_TERMS = Object.keys(GLOSSARY);
+
+function glossaryTerm(key) {
+  return GLOSSARY[key] || null;
+}
+
+// Renders jargon as a small, focusable, tappable term with a definition.
+function Term(key, label) {
+  const text = label || key;
+  const definition = GLOSSARY[key];
+  if (!definition) return escapeHTML(text);
+  return `<button type="button" class="term" data-term="${escapeHTML(key)}" aria-expanded="false">${escapeHTML(text)}<span class="term-def" role="tooltip">${escapeHTML(definition)}</span></button>`;
+}
+
+let activeTerm = null;
+
+function showTerm(button) {
+  if (!button) return;
+  hideTerm();
+  activeTerm = button;
+  button.setAttribute("aria-expanded", "true");
+  button.classList.add("open");
+}
+
+function hideTerm() {
+  if (!activeTerm) return;
+  activeTerm.setAttribute("aria-expanded", "false");
+  activeTerm.classList.remove("open");
+  activeTerm = null;
+}
+
+// A section that Guided readers keep folded away until they ask for it.
+function isEngineerMode() {
+  return st.detail === "ENGINEER";
+}
+
 // Phase 3: one vertically scrolling panel per step replaces the three tabs.
 // Order is always: the controls, then Live numbers, then "What is this?",
 // then Specs and details.
-function panelSection(title, body, tag) {
+function panelSection(title, body, tag, { advanced = false } = {}) {
   if (!body) return "";
-  return `<section class="panel-section"><div class="panel-heading"><h3>${title}</h3>${
+  const heading = `<div class="panel-heading"><h3>${title}</h3>${
     tag ? `<span class="tag">${escapeHTML(tag)}</span>` : ""
-  }</div>${body}</section>`;
+  }</div>`;
+  // In Guided mode the deep numbers stay folded behind "More options";
+  // Engineer mode opens everything.
+  if (advanced && !isEngineerMode())
+    return `<section class="panel-section folded"><details class="more-options"><summary>${escapeHTML(
+      title
+    )}${tag ? ` <span class="tag">${escapeHTML(tag)}</span>` : ""}</summary>${body}</details></section>`;
+  return `<section class="panel-section">${heading}${body}</section>`;
 }
 
 function renderStepPanel() {
@@ -8615,7 +8710,7 @@ function renderMicrowavePanel() {
     renderMicrowaveHero() +
     panelSection("Live numbers", renderMwMetrics() + renderMwMeter(), "LINK BUDGET") +
     panelSection("Configure", renderMicrowaveConfigure()) +
-    panelSection("Specs and details", renderMicrowaveSpecs(), "PRELIMINARY")
+    panelSection("Specs and details", renderMicrowaveSpecs(), "PRELIMINARY", { advanced: true })
   );
 }
 
@@ -8625,7 +8720,7 @@ function renderCellularPanel() {
     renderCellularHero() +
     panelSection("Live numbers", renderCellularMetrics() + renderSiteMaster(), "PER SECTOR") +
     panelSection("Configure", renderCellularControls()) +
-    panelSection("Specs and details", renderCellularSpecs())
+    panelSection("Specs and details", renderCellularSpecs(), "", { advanced: true })
   );
 }
 
@@ -8634,7 +8729,7 @@ function renderRackPanel() {
     renderRackOverview() +
     panelSection("Live numbers", renderRackMetrics(), "LIVE kW / HOURS / Gbps") +
     panelSection("Configure", renderRackControls()) +
-    panelSection("Specs and details", renderRackSpecs(), "PRELIMINARY")
+    panelSection("Specs and details", renderRackSpecs(), "PRELIMINARY", { advanced: true })
   );
 }
 
@@ -8648,7 +8743,7 @@ function renderPowerPanel() {
     panelSection("Live numbers", renderPowerLiveGrid(), "SIMULATED") +
     panelSection("Configure", renderPowerControls()) +
     panelSection("Alarms", renderPowerAlarms()) +
-    panelSection("Specs and details", renderPowerSpecs(), "PRELIMINARY")
+    panelSection("Specs and details", renderPowerSpecs(), "PRELIMINARY", { advanced: true })
   );
 }
 
@@ -8656,7 +8751,7 @@ function renderPhase6Panel() {
   return (
     renderPhase6Overview() +
     panelSection("Configure", renderPhase6Configure(), "COMMANDS & LAUNCH") +
-    panelSection("Specs and details", renderPhase6Specs())
+    panelSection("Specs and details", renderPhase6Specs(), "", { advanced: true })
   );
 }
 
@@ -8667,7 +8762,7 @@ function renderSitePanel() {
     renderSiteControls() +
     panelSection("Live numbers", renderSiteMetrics(), "UPDATES WITH HEIGHT") +
     panelSection("What is this?", renderSiteExplainer()) +
-    panelSection("Specs and details", renderSiteDetails(), "PRELIMINARY")
+    panelSection("Specs and details", renderSiteDetails(), "PRELIMINARY", { advanced: true })
   );
 }
 
@@ -8675,12 +8770,12 @@ function renderSiteMetrics() {
   const env = ENVIRONMENTS[st.env];
   const calc = calculateEngineering();
   return `<div class="summary-metrics">
-        <div class="metric"><small>DESIGN WIND</small><strong>${env.wind} km/h</strong></div>
-        <div class="metric"><small>CIVIL DEAD LOAD</small><strong>${calc.deadLoad.toFixed(1)} kN</strong></div>
+        <div class="metric"><small>${Term("WIND AREA", "DESIGN WIND")}</small><strong>${env.wind} km/h</strong></div>
+        <div class="metric"><small>${Term("DEAD LOAD", "CIVIL DEAD LOAD")}</small><strong>${calc.deadLoad.toFixed(1)} kN</strong></div>
         <div class="metric"><small>FOUNDATION</small><strong>${env.bearing ? env.bearing + " kPa" : "ROOF FRAME"}</strong></div>
         <div class="metric"><small>ICE LOADING</small><strong>${env.ice}</strong></div>
-        <div class="metric"><small>TORSIONAL TWIST</small><strong>${calc.twist.toFixed(2)}°</strong></div>
-        <div class="metric"><small>EARTH LOOP</small><strong>${Number.isFinite(calc.resistance) ? calc.resistance.toFixed(1) + " Ω" : "OPEN"}</strong></div>
+        <div class="metric"><small>${Term("TORSION", "TORSIONAL TWIST")}</small><strong>${calc.twist.toFixed(2)}°</strong></div>
+        <div class="metric"><small>${Term("EARTH LOOP")}</small><strong>${Number.isFinite(calc.resistance) ? calc.resistance.toFixed(1) + " Ω" : "OPEN"}</strong></div>
       </div>`;
 }
 
@@ -9853,13 +9948,24 @@ function renderLockedNotice() {
 
 // The six gates shown from step 02 onward. They are the same six checks the
 // carrier acceptance audit uses, so nothing can pass here and fail there.
+// Acceptance gate id -> glossary key.
+const GATE_TERMS = {
+  civil: "TORSION",
+  earthing: "EARTH LOOP",
+  power: "N+1",
+  backhaul: "BACKHAUL",
+  rf: "VSWR",
+  alarms: "ALARM HIGHWAY",
+};
+
 function gateStrip() {
   const audit = calculateAcceptance();
   return `<div class="gate-strip" role="list" aria-label="Site readiness gates">${audit.checks
-    .map(
-      (check) =>
-        `<div class="gate ${check.pass ? "pass" : "fail"}" role="listitem" title="${escapeHTML(check.explanation)}"><span class="gate-dot"></span><small>${escapeHTML(check.title)}</small><strong>${check.pass ? "PASS" : "OPEN"}</strong></div>`
-    )
+    .map((check) => {
+      const key = GATE_TERMS[check.id];
+      const label = key ? Term(key, check.title) : escapeHTML(check.title);
+      return `<div class="gate ${check.pass ? "pass" : "fail"}" role="listitem" title="${escapeHTML(check.explanation)}"><span class="gate-dot"></span><small>${label}</small><strong>${check.pass ? "PASS" : "OPEN"}</strong></div>`;
+    })
     .join("")}</div>`;
 }
 
@@ -10581,6 +10687,42 @@ $("#shortcuts-modal").addEventListener("click", (event) => {
     closeShortcutsModal();
 });
 
+// Glossary: hover, focus and tap all open the same definition. Touch devices
+// have no hover, so click toggles and Escape closes.
+function bindGlossary() {
+  const root = document.body;
+  const openFrom = (event) => {
+    const button = event.target.closest(".term");
+    if (!button) return;
+    if (activeTerm === button) hideTerm();
+    else showTerm(button);
+  };
+  root.addEventListener("click", (event) => {
+    if (event.target.closest(".term")) {
+      openFrom(event);
+      return;
+    }
+    hideTerm();
+  });
+  root.addEventListener(
+    "mouseover",
+    (event) => {
+      const button = event.target.closest(".term");
+      if (button && !isTouchPointer()) showTerm(button);
+    },
+    true
+  );
+  root.addEventListener("focusin", (event) => {
+    const button = event.target.closest(".term");
+    if (button) showTerm(button);
+  });
+  root.addEventListener("focusout", (event) => {
+    if (event.target.closest(".term")) hideTerm();
+  });
+}
+
+bindGlossary();
+
 const sheetHandle = $("#sheet-handle");
 if (sheetHandle) sheetHandle.addEventListener("click", cycleSheet);
 
@@ -10800,6 +10942,10 @@ window.addEventListener("keydown", (event) => {
     active &&
     (["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) || active.isContentEditable);
   if (event.key === "Escape" && !typing) {
+    if (activeTerm) {
+      hideTerm();
+      return;
+    }
     closeMenuPanel();
     closeShortcutsModal();
     clearSelection();
@@ -11002,6 +11148,13 @@ window.TowerStudio.chromeMetrics = chromeMetrics;
 window.TowerStudio.setSheet = setSheet;
 window.TowerStudio.cycleSheet = cycleSheet;
 window.TowerStudio.focusSizeMultiplier = focusSizeMultiplier;
+window.TowerStudio.GLOSSARY = GLOSSARY;
+window.TowerStudio.GLOSSARY_TERMS = GLOSSARY_TERMS;
+window.TowerStudio.glossaryTerm = glossaryTerm;
+window.TowerStudio.Term = Term;
+window.TowerStudio.isEngineerMode = isEngineerMode;
+window.TowerStudio.showTerm = showTerm;
+window.TowerStudio.hideTerm = hideTerm;
 window.TowerStudio.stepState = stepState;
 window.TowerStudio.stepDone = stepDone;
 window.TowerStudio.stepRequirement = stepRequirement;

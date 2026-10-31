@@ -2078,6 +2078,80 @@ input[type="range"]::-moz-range-thumb {
   font-size: 10px;
 }
 
+/* Glossary terms: hover, focus and tap all reveal the same definition */
+.term {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted var(--ink);
+  background: none;
+  color: inherit;
+  cursor: help;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.term:hover,
+.term:focus-visible,
+.term.open {
+  background: var(--amber);
+  outline: none;
+}
+.term-def {
+  position: absolute;
+  z-index: 55;
+  left: 0;
+  top: calc(100% + 6px);
+  display: none;
+  width: min(280px, 78vw);
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: var(--ink);
+  font: 400 11px/1.5 var(--body);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+}
+.term {
+  position: relative;
+}
+.term:hover .term-def,
+.term:focus-visible .term-def,
+.term.open .term-def {
+  display: block;
+}
+
+/* "More options" fold used by Guided mode */
+.more-options {
+  border: 2px solid var(--line);
+  background: var(--paper);
+}
+.more-options > summary {
+  min-height: 40px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font: 700 11px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  list-style: none;
+}
+.more-options > summary::-webkit-details-marker {
+  display: none;
+}
+.more-options > summary::before {
+  content: "+ ";
+  color: var(--muted);
+}
+.more-options[open] > summary::before {
+  content: "− ";
+}
+.more-options > summary:hover {
+  background: var(--amber);
+}
+
 /* One scrolling panel per step: controls, live numbers, what is this, specs */
 .panel-section {
   margin-top: 18px;
