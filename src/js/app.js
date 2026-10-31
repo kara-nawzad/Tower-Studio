@@ -220,6 +220,10 @@ st.rack = {
   vendor: "ERICSSON",
   location: "INDOOR",
   radioCount: 6,
+  // Slots the engineer toggled by hand away from the profile default; a later
+  // profile change asks before overwriting them (audit 9.6 #54).
+  manualSlots: {},
+  pendingProfile: null,
   slots: {
     fau: true,
     dug: true,
@@ -278,7 +282,14 @@ const launch = {
 st.ai = {
   architectOpen: window.innerWidth > 760,
   lastPrompt: "",
+  // A parsed plan waiting for the user to confirm it before it is built.
+  pendingPlan: null,
 };
+
+// Shown once after the autosaved workspace has been restored.
+st.restoreNotice = false;
+// "GUIDED" shows the essentials; "ENGINEER" shows every control (Phase 5).
+st.detail = "GUIDED";
 
 const aiBuild = {
   running: false,
@@ -5822,6 +5833,16 @@ function renderRackConfigure() {
           `<div class="slot-manager-row"><button data-action="rack-select" data-value="rack-${key}">${label}<small>${RACK_SLOT_POWER[key] ? `${(RACK_SLOT_POWER[key] * 1000).toFixed(0)} W DC` : "Passive surge protection"}</small></button><button class="slot-install ${st.rack.slots[key] ? "remove" : ""}" data-action="rack-toggle" data-value="${key}">[ ${st.rack.slots[key] ? "REMOVE" : "INSTALL"} ]</button></div>`
       )
       .join("")}</div>
+    <div class="rack-profile-actions">
+      <button class="rack-action secondary" data-action="rack-reset-profile" ${
+        manualSlotCount() ? "" : "disabled"
+      }>[ RESET CARDS TO PROFILE DEFAULTS ]</button>
+      <span class="rack-note-inline">${
+        manualSlotCount()
+          ? `${manualSlotCount()} card${manualSlotCount() === 1 ? "" : "s"} fitted or removed by hand. Reset refits the ${escapeHTML(smartProfile().label || cellularGeneration().label)} profile defaults.`
+          : "Every card matches the active profile."
+      }</span>
+    </div>
     <p class="rack-note">Removing a card empties its physical slot and immediately recalculates cabinet load, backup hours and service capacity. Router or TDM removal also opens the yellow patch link.</p>
     ${renderRackMetrics()}${renderRackActionStatus()}${renderRackActions()}`;
 }
@@ -6477,6 +6498,15 @@ function cvSnapshot() {
       customGenerations: st.customGenerations,
       cellular: st.cellular,
       microwave: st.microwave,
+      // Keep the version list itself so restoring one version does not erase
+      // the others (audit 9.6 #44).
+      flow: {
+        masterStep: st.masterStep,
+        drawerOpen: st.drawerOpen,
+        onboardingActive: st.onboarding.active,
+        terminalOpen: st.terminal.open,
+        cvs: JSON.parse(JSON.stringify(st.terminal.cvs)),
+      },
     })
   );
 }
@@ -6551,6 +6581,14 @@ function ericssonCLI(command, normalized) {
         return `${lower.slice(3).toUpperCase()}-${index + 1}: ${status}${detail}`;
       })
       .join("\n");
+  }
+  const cvRestoreMatch = normalized.match(/^cvrestore\s+(.+)$/i);
+  if (cvRestoreMatch) {
+    const name = cvRestoreMatch[1].trim();
+    if (!cvByName(name))
+      return `ERROR: No configuration version named ${name}. Run show system to list them.`;
+    if (!restoreCV(name)) return `ERROR: CV ${name} could not be applied.`;
+    return `CV ${name} restored; the site was rebuilt from that snapshot.`;
   }
   const cvMatch = normalized.match(/^cvms\s+(.+)$/i);
   if (cvMatch) {
@@ -6631,7 +6669,7 @@ function cliResponse(command) {
   const normalized = command.trim().replace(/\s+/g, " ");
   const lower = normalized.toLowerCase();
   if (lower === "help")
-    return `${st.rack.vendor} commands:\n${cliCommands().join("\n")}${st.rack.vendor === "ERICSSON" ? "\ncvms <name>" : ""}\nai diagnose\n${triage.active ? `1 / 2 / 3${triage.throttleBackup ? " / 4" : ""} · guided remediation\n` : ""}clear`;
+    return `${st.rack.vendor} commands:\n${cliCommands().join("\n")}${st.rack.vendor === "ERICSSON" ? "\ncvms <name>" : ""}\ncvrestore <name>\nai diagnose\n${triage.active ? `1 / 2 / 3${triage.throttleBackup ? " / 4" : ""} · guided remediation\n` : ""}clear`;
   if (lower === "ai diagnose" || lower === "ai diagnosis") return runAICopilot();
   if (triage.active && ["1", "2", "3", "4"].includes(lower))
     return applyTriageChoice(Number(lower));
@@ -6691,10 +6729,38 @@ function renderPhase6Overview() {
   return `${renderAcceptancePanel()}<section class="launch-panel"><button class="launch-action ${launch.onAir ? "operational" : ""}" data-action="go-on-air" ${!audit.pass || launch.onAir ? "disabled" : ""}>${launch.onAir ? "[ ON AIR — SITE OPERATIONAL ]" : "[ GO ON AIR ]"}</button><p class="launch-note ${launch.onAir || audit.pass ? "ready" : "blocked"}" id="launch-note">${launchNote}</p></section>${st.terminal.open ? renderTerminal() : `<section class="phase6-card"><h3>Multi-vendor CLI Console</h3><p>Open the docked ${st.rack.vendor} terminal to inspect live MOs, boards, radios, ports, alarms and configuration versions.</p><div class="phase6-actions"><button class="phase6-button primary" data-action="terminal-open">[ OPEN DOCKED TERMINAL ]</button><button class="phase6-button" data-action="acceptance-refresh">[ RE-RUN AUDIT ]</button></div></section>`}`;
 }
 
+function cvByName(name) {
+  return st.terminal.cvs.find((entry) => entry.name === name) || null;
+}
+
+function restoreCV(name) {
+  if (!cvByName(name)) {
+    toast("THAT CONFIGURATION VERSION NO LONGER EXISTS");
+    return false;
+  }
+  // The version list is a record of what was saved, so restoring one version
+  // must never change which versions exist (audit 9.6 #44).
+  const cvs = st.terminal.cvs.map((entry) => ({ ...entry }));
+  commitHistory("cv-restore");
+  if (!applySite(cvByName(name).snapshot, { reason: `CV ${name.toUpperCase()} RESTORED` }))
+    return false;
+  st.terminal.cvs = cvs.map((entry) => ({
+    ...entry,
+    status: entry.name === name ? "STARTABLE" : "ARCHIVED",
+  }));
+  renderDrawer();
+  return true;
+}
+
 function renderCVList() {
   if (!st.terminal.cvs.length)
     return '<p class="launch-note">No configuration versions yet. In Ericsson mode, run cvms &lt;name&gt; to snapshot the live site.</p>';
-  return `<div class="cv-list">${st.terminal.cvs.map((cv) => `<div class="cv-row"><div>${escapeHTML(cv.name)}<small>${escapeHTML(cv.created)}</small></div><span>${cv.status}</span></div>`).join("")}</div>`;
+  return `<div class="cv-list">${st.terminal.cvs
+    .map(
+      (cv) =>
+        `<div class="cv-row"><div>${escapeHTML(cv.name)}<small>${escapeHTML(cv.created)}</small></div><span>${cv.status}</span><button class="phase6-button cv-restore" type="button" data-action="cv-restore" data-value="${escapeHTML(cv.name)}">[ RESTORE ]</button></div>`
+    )
+    .join("")}</div>`;
 }
 
 function renderPhase6Configure() {
@@ -6724,7 +6790,7 @@ function renderPhase6Specs() {
       ["OUTPUT HISTORY", `${st.terminal.lines.length} / 300 lines`],
     ],
     "CV snapshots contain plain engineering state only; terminal history and snapshots are bounded to prevent uncontrolled memory growth."
-  )}</div><section class="phase6-card"><h3>${st.rack.vendor} CLI Quick Reference</h3><div class="cli-reference">${[...cliCommands(), ...(st.rack.vendor === "ERICSSON" ? ["cvms <name>"] : []), "ai diagnose", "help", "clear"].map((command) => `<code>${escapeHTML(command)}</code>`).join("")}</div></section>`;
+  )}</div><section class="phase6-card"><h3>${st.rack.vendor} CLI Quick Reference</h3><div class="cli-reference">${[...cliCommands(), ...(st.rack.vendor === "ERICSSON" ? ["cvms <name>"] : []), "cvrestore <name>", "ai diagnose", "help", "clear"].map((command) => `<code>${escapeHTML(command)}</code>`).join("")}</div></section>`;
 }
 
 function updateAcceptanceLive() {
@@ -6797,6 +6863,687 @@ function toggleTerminal() {
     content.scrollTop = content.scrollHeight;
     scrollTerminalOutput();
   }
+}
+
+// -------------------------------------------------------------------------
+// Workspace: serialization, autosave, undo/redo, file import/export, confirms
+// -------------------------------------------------------------------------
+const WORKSPACE_STORAGE_KEY = "tower-studio.workspace.v1";
+const DETAIL_STORAGE_KEY = "tower-studio.detail.v1";
+const SITE_FILE_KIND = "tower-studio/site";
+const SITE_FILE_VERSION = 1;
+const HISTORY_LIMIT = 50;
+const AUTOSAVE_DELAY = 400;
+
+const clone = (value) => JSON.parse(JSON.stringify(value));
+
+// Deep clone of everything that defines the site. Simulation transients
+// (powerSim, cellularSim, rackSim, launch, aiBuild, terminal lines, sweep
+// traces) are deliberately excluded: they are re-derived, never restored.
+function serializeSite() {
+  return {
+    env: st.env,
+    tower: st.tower,
+    H: st.H,
+    lightning: st.lightning,
+    grounding: !!st.grounding,
+    generation: st.generation,
+    customGenerations: [...st.customGenerations],
+    power: clone(st.power),
+    rack: {
+      vendor: st.rack.vendor,
+      location: st.rack.location,
+      radioCount: st.rack.radioCount,
+      slots: clone(st.rack.slots),
+      manualSlots: clone(st.rack.manualSlots || {}),
+    },
+    microwave: clone(st.microwave),
+    cellular: {
+      sector: st.cellular.sector,
+      fault: !!st.cellular.fault,
+      sectors: clone(st.cellular.sectors),
+    },
+    flow: {
+      masterStep: st.masterStep,
+      drawerOpen: !!st.drawerOpen,
+      onboardingActive: !!st.onboarding.active,
+      terminalOpen: !!st.terminal.open,
+      cvs: clone(st.terminal.cvs),
+    },
+  };
+}
+
+const SITE_GENERATIONS = ["2G", "3G", "4G", "5G", "MIXED", "CUSTOM"];
+
+// Returns a cleaned site object, or null when the payload is unusable.
+function normalizeSiteData(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  if (!ENVIRONMENTS[data.env] || !TOWERS[data.tower]) return null;
+
+  const height = Number(data.H);
+  const [min, max] = TOWERS[data.tower].range;
+  const power = data.power && typeof data.power === "object" ? data.power : {};
+  const rack = data.rack && typeof data.rack === "object" ? data.rack : {};
+  const microwave = data.microwave && typeof data.microwave === "object" ? data.microwave : {};
+  const cellular = data.cellular && typeof data.cellular === "object" ? data.cellular : {};
+  const flow = data.flow && typeof data.flow === "object" ? data.flow : {};
+
+  const slots = {};
+  Object.keys(RACK_SLOT_POWER).forEach((key) => {
+    const source = rack.slots && typeof rack.slots === "object" ? rack.slots : {};
+    slots[key] = !!source[key];
+  });
+  const manualSlots = {};
+  if (rack.manualSlots && typeof rack.manualSlots === "object") {
+    Object.keys(RACK_SLOT_POWER).forEach((key) => {
+      if (rack.manualSlots[key]) manualSlots[key] = true;
+    });
+  }
+
+  const sectors = [0, 1, 2].map((index) => {
+    const source = Array.isArray(cellular.sectors) ? cellular.sectors[index] : null;
+    const sector = source && typeof source === "object" ? source : {};
+    const azimuth = Number(sector.azimuth);
+    const downtilt = Number(sector.downtilt);
+    const txPower = Number(sector.txPower);
+    const bandwidth = Number(sector.bandwidth);
+    return {
+      azimuth: Number.isFinite(azimuth) ? clamp(azimuth, 0, 360) : [30, 150, 270][index],
+      downtilt: Number.isFinite(downtilt) ? clamp(downtilt, 0, 10) : 2,
+      txPower: Number.isFinite(txPower) ? clamp(Math.round(txPower), 43, 49) : 46,
+      bandwidth: [20, 40, 100].includes(bandwidth) ? bandwidth : 100,
+      onAir: sector.onAir !== false,
+    };
+  });
+
+  const sourceMode = ["GRID_WITH_STANDBY", "DUAL_GENERATOR_OFFGRID"].includes(power.sourceMode)
+    ? power.sourceMode
+    : "GRID_WITH_STANDBY";
+  const batteryType = ["VRLA", "LITHIUM"].includes(power.batteryType) ? power.batteryType : "VRLA";
+
+  return {
+    env: data.env,
+    tower: data.tower,
+    H: Number.isFinite(height)
+      ? clamp(Math.round(height), min, max)
+      : TOWERS[data.tower].defaultHeight,
+    lightning: ["FRANKLIN", "ESE_ACTIVE"].includes(data.lightning) ? data.lightning : "FRANKLIN",
+    grounding: data.grounding !== false,
+    generation: SITE_GENERATIONS.includes(data.generation) ? data.generation : "MIXED",
+    customGenerations: Array.isArray(data.customGenerations)
+      ? normalizeCustomGenerations(data.customGenerations)
+      : ["2G", "3G"],
+    power: {
+      sourceMode,
+      atsMode: ["CLASSIC_RELAY", "DIGITAL_PLC"].includes(power.atsMode)
+        ? power.atsMode
+        : "DIGITAL_PLC",
+      radioLoadKw: Number.isFinite(Number(power.radioLoadKw))
+        ? clamp(Number(power.radioLoadKw), 0.5, 12)
+        : 3,
+      rectifiers: Number.isFinite(Number(power.rectifiers))
+        ? clamp(Math.round(Number(power.rectifiers)), 1, 8)
+        : 3,
+      autoRectifiers: power.autoRectifiers !== false,
+      batteryStrings: Number.isFinite(Number(power.batteryStrings))
+        ? clamp(Math.round(Number(power.batteryStrings)), 1, 8)
+        : 4,
+      batteryAh: Number.isFinite(Number(power.batteryAh))
+        ? clamp(Math.round(Number(power.batteryAh)), 50, 400)
+        : 200,
+      batteryType,
+      branches: {
+        rectifier: !(power.branches && power.branches.rectifier === false),
+        climate: !(power.branches && power.branches.climate === false),
+        auxiliary: !(power.branches && power.branches.auxiliary === false),
+      },
+      climateSetpoint: Number.isFinite(Number(power.climateSetpoint))
+        ? clamp(Number(power.climateSetpoint), 18, 30)
+        : 24,
+    },
+    rack: {
+      vendor: ["ERICSSON", "HUAWEI", "NOKIA"].includes(rack.vendor) ? rack.vendor : "ERICSSON",
+      location: rack.location === "OUTDOOR" ? "OUTDOOR" : "INDOOR",
+      radioCount: Number.isFinite(Number(rack.radioCount))
+        ? clamp(Math.round(Number(rack.radioCount)), 0, 12)
+        : 6,
+      slots,
+      manualSlots,
+    },
+    microwave: {
+      system: ["MICROWAVE", "CELLULAR"].includes(microwave.system) ? microwave.system : "MICROWAVE",
+      topology: MICROWAVE_TOPOLOGIES[microwave.topology] ? microwave.topology : "STANDALONE",
+      diameter: [0.3, 0.6, 1.2, 1.8, 2.4].includes(Number(microwave.diameter))
+        ? Number(microwave.diameter)
+        : 0.6,
+      frequency: [7, 15, 23, 38].includes(Number(microwave.frequency))
+        ? Number(microwave.frequency)
+        : 15,
+      azimuth: Number.isFinite(Number(microwave.azimuth))
+        ? clamp(Number(microwave.azimuth), 0, 360)
+        : 42,
+      targetAzimuth: Number.isFinite(Number(microwave.targetAzimuth))
+        ? clamp(Number(microwave.targetAzimuth), 0, 360)
+        : 30,
+      spacing: Number.isFinite(Number(microwave.spacing))
+        ? clamp(Number(microwave.spacing), 3, 6)
+        : 4,
+      xpicBoost: !!microwave.xpicBoost,
+    },
+    cellular: {
+      sector: Number.isFinite(Number(cellular.sector))
+        ? clamp(Math.round(Number(cellular.sector)), 0, 2)
+        : 0,
+      fault: !!cellular.fault,
+      sectors,
+    },
+    flow: {
+      masterStep: [1, 2, 3, 4, 5].includes(Number(flow.masterStep)) ? Number(flow.masterStep) : 1,
+      drawerOpen: flow.drawerOpen !== false,
+      onboardingActive: !!flow.onboardingActive,
+      terminalOpen: !!flow.terminalOpen,
+      cvs: Array.isArray(flow.cvs)
+        ? flow.cvs
+            .filter((cv) => cv && typeof cv.name === "string" && cv.snapshot)
+            .slice(0, 20)
+            .map((cv) => ({
+              name: cv.name,
+              status: cv.status === "STARTABLE" ? "STARTABLE" : "ARCHIVED",
+              created: String(cv.created || ""),
+              snapshot: cv.snapshot,
+            }))
+        : [],
+    },
+  };
+}
+
+function siteFileIssues(payload) {
+  if (!payload || typeof payload !== "object") return ["The file does not contain valid JSON."];
+  if (payload.kind !== SITE_FILE_KIND)
+    return [`This is not a Tower Studio site file (kind is "${payload.kind ?? "missing"}").`];
+  if (Number(payload.version) !== SITE_FILE_VERSION)
+    return [
+      `Unsupported site file version ${payload.version ?? "?"}; this build reads version ${SITE_FILE_VERSION}.`,
+    ];
+  if (!normalizeSiteData(payload.site))
+    return ["The site definition inside the file could not be read."];
+  return [];
+}
+
+// Applies a site definition, re-derives everything and never leaves the site
+// falsely "on air" (audit 9.6).
+function applySite(raw, { keepHistory = false, reason = "" } = {}) {
+  const site = normalizeSiteData(raw);
+  if (!site) return false;
+
+  siteHistory.suspended = true;
+  st.env = site.env;
+  st.tower = site.tower;
+  st.H = site.H;
+  st.lightning = site.lightning;
+  st.grounding = site.grounding;
+  st.generation = site.generation;
+  st.customGenerations = site.customGenerations;
+  st.power = site.power;
+  st.rack = site.rack;
+  st.microwave = site.microwave;
+  st.cellular.sector = site.cellular.sector;
+  st.cellular.fault = site.cellular.fault;
+  st.cellular.sectors = site.cellular.sectors;
+  st.cellular.sweeps = [null, null, null];
+  st.cellular.aiDiagnostics = [null, null, null];
+  st.terminal.cvs = site.flow.cvs;
+  st.terminal.lines = [];
+  st.terminal.welcomed = false;
+  st.terminal.open = site.flow.terminalOpen;
+  st.masterStep = site.flow.masterStep;
+  st.drawerOpen = site.flow.drawerOpen;
+  st.onboarding.active = site.flow.onboardingActive;
+  st.onboarding.towerSelected = !site.flow.onboardingActive;
+  st.selectedId = null;
+  st.ai.pendingPlan = null;
+  st.rack.pendingProfile = null;
+
+  launch.onAir = false;
+  launch.launchedAt = 0;
+  launch.suspendedReason = "";
+  cellularSim.running = false;
+  triage.active = false;
+  triage.throttleBackup = null;
+  triage.curve = null;
+  triage.options = [];
+  microwaveSim.azimuth = st.microwave.azimuth;
+
+  normalizeState();
+  rebuildSite();
+  fitSite();
+  renderDrawer();
+  updateHUD();
+  updateSelection();
+  siteHistory.suspended = false;
+  if (!keepHistory) scheduleAutosave();
+  if (reason) toast(reason);
+  return true;
+}
+
+// --- undo / redo -----------------------------------------------------------
+const siteHistory = { past: [], future: [], pending: null, suspended: false };
+
+function beginHistoryTransaction() {
+  if (siteHistory.suspended) return;
+  if (siteHistory.pending === null) siteHistory.pending = JSON.stringify(serializeSite());
+}
+
+function commitHistory(label) {
+  if (siteHistory.suspended) return;
+  const snapshot =
+    siteHistory.pending !== null ? siteHistory.pending : JSON.stringify(serializeSite());
+  siteHistory.pending = null;
+  const top = siteHistory.past[siteHistory.past.length - 1];
+  if (top && top.site === snapshot) return;
+  siteHistory.past.push({ label, site: snapshot });
+  if (siteHistory.past.length > HISTORY_LIMIT) siteHistory.past.shift();
+  siteHistory.future.length = 0;
+  scheduleAutosave();
+}
+
+function historyLabelText(label) {
+  return String(label || "change")
+    .replace(/[-_]/g, " ")
+    .toUpperCase();
+}
+
+function undo() {
+  if (!siteHistory.past.length) {
+    toast("NOTHING TO UNDO");
+    return false;
+  }
+  const entry = siteHistory.past.pop();
+  siteHistory.future.push({ label: entry.label, site: JSON.stringify(serializeSite()) });
+  applySite(JSON.parse(entry.site), {
+    keepHistory: true,
+    reason: `UNDO · ${historyLabelText(entry.label)}`,
+  });
+  scheduleAutosave();
+  return true;
+}
+
+function redo() {
+  if (!siteHistory.future.length) {
+    toast("NOTHING TO REDO");
+    return false;
+  }
+  const entry = siteHistory.future.pop();
+  siteHistory.past.push({ label: entry.label, site: JSON.stringify(serializeSite()) });
+  applySite(JSON.parse(entry.site), {
+    keepHistory: true,
+    reason: `REDO · ${historyLabelText(entry.label)}`,
+  });
+  scheduleAutosave();
+  return true;
+}
+
+function canUndo() {
+  return siteHistory.past.length > 0;
+}
+function canRedo() {
+  return siteHistory.future.length > 0;
+}
+
+// Actions that change the site definition and therefore need a history entry.
+const MUTATING_ACTIONS = new Set([
+  "environment",
+  "tower",
+  "lightning",
+  "smart-vendor",
+  "smart-generation",
+  "custom-gen-toggle",
+  "rack-vendor",
+  "rack-location",
+  "rack-toggle",
+  "rack-reset-profile",
+  "profile-confirm-apply",
+  "battery-strings",
+  "battery-ah",
+  "battery-type",
+  "power-source-mode",
+  "mw-system",
+  "mw-topology",
+  "mw-diameter",
+  "mw-frequency",
+  "mw-xpic",
+  "mw-auto-align",
+  "rf-bandwidth",
+  "rf-onair",
+  "rf-fault",
+  "cv-restore",
+  "triage-choice",
+]);
+
+// --- autosave --------------------------------------------------------------
+let autosaveTimer = null;
+
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveWorkspace, AUTOSAVE_DELAY);
+}
+
+function saveWorkspace() {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    localStorage.setItem(
+      WORKSPACE_STORAGE_KEY,
+      JSON.stringify({
+        version: SITE_FILE_VERSION,
+        savedAt: new Date().toISOString(),
+        site: serializeSite(),
+      })
+    );
+    return true;
+  } catch (_) {
+    // Private browsing, disabled storage or a quota error: work continues.
+    return false;
+  }
+}
+
+function readWorkspace() {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || Number(parsed.version) !== SITE_FILE_VERSION) return null;
+    return normalizeSiteData(parsed.site);
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearWorkspace() {
+  try {
+    if (typeof localStorage !== "undefined") localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+  } catch (_) {
+    /* Storage may be unavailable. */
+  }
+}
+
+// True once the user has entered the simulator for this session.
+let workspaceRestoreChecked = false;
+
+function restoreWorkspaceIfPresent() {
+  if (workspaceRestoreChecked) return false;
+  workspaceRestoreChecked = true;
+  const site = readWorkspace();
+  if (!site) return false;
+  applySite(site, { keepHistory: false });
+  st.restoreNotice = true;
+  renderDrawer();
+  return true;
+}
+
+// --- menu, dialogs and confirmations ---------------------------------------
+const PROFILE_ACTIONS = new Set([
+  "smart-vendor",
+  "smart-generation",
+  "rack-vendor",
+  "custom-gen-toggle",
+]);
+
+function setMenuOpen(open) {
+  const panel = $("#menu-panel");
+  const toggle = $("#menu-toggle");
+  if (!panel) return;
+  panel.hidden = !open;
+  if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) updateMenuState();
+}
+
+function closeMenuPanel() {
+  setMenuOpen(false);
+}
+
+function updateMenuState() {
+  const undoButton = $("#undo-button");
+  const redoButton = $("#redo-button");
+  const menuUndo = document.querySelector('[data-action="menu-undo"]');
+  const menuRedo = document.querySelector('[data-action="menu-redo"]');
+  if (undoButton) undoButton.disabled = !canUndo();
+  if (redoButton) redoButton.disabled = !canRedo();
+  if (menuUndo) menuUndo.disabled = !canUndo();
+  if (menuRedo) menuRedo.disabled = !canRedo();
+  const detail = $("#menu-detail-level");
+  if (detail)
+    detail.innerHTML = `Detail level: ${st.detail === "ENGINEER" ? "Engineer" : "Guided"}<small>${
+      st.detail === "ENGINEER" ? "Show every control" : "Show the essentials"
+    }</small>`;
+}
+
+function openShortcutsModal() {
+  const modal = $("#shortcuts-modal");
+  if (modal) modal.hidden = false;
+}
+
+function closeShortcutsModal() {
+  const modal = $("#shortcuts-modal");
+  if (modal) modal.hidden = true;
+}
+
+// --- profile overwrite confirmation (audit 9.6 #54) ------------------------
+function manualSlotCount() {
+  return Object.keys(st.rack.manualSlots || {}).filter((key) => st.rack.manualSlots[key]).length;
+}
+
+// Remember whether a slot now differs from what the active profile would fit.
+function syncManualSlot(key) {
+  const curated = smartProfile().slots.includes(key);
+  const manual = { ...(st.rack.manualSlots || {}) };
+  if (st.rack.slots[key] === curated) delete manual[key];
+  else manual[key] = true;
+  st.rack.manualSlots = manual;
+}
+
+function pendingProfileSummary() {
+  const pending = st.rack.pendingProfile;
+  if (!pending) return "";
+  if (pending.kind === "custom-gen-toggle")
+    return `Add or remove the ${pending.value} radio generation`;
+  if (pending.kind === "smart-generation")
+    return `Switch every card to the ${pending.value} profile`;
+  return `Switch the cabinet to the ${pending.value} profile`;
+}
+
+function applyProfileChange(kind, value) {
+  if (kind === "smart-vendor" || kind === "rack-vendor") st.rack.vendor = value;
+  else if (kind === "smart-generation") st.generation = value;
+  else if (kind === "custom-gen-toggle") {
+    const current = normalizeCustomGenerations(st.customGenerations);
+    if (current.includes(value)) {
+      if (current.length <= 1) {
+        toast("SELECT AT LEAST ONE RADIO GENERATION");
+        return false;
+      }
+      st.customGenerations = current.filter((item) => item !== value);
+    } else {
+      st.customGenerations = normalizeCustomGenerations([...current, value]);
+    }
+    st.generation = "CUSTOM";
+  } else return false;
+
+  applySmartProfile();
+  st.rack.manualSlots = {};
+  st.rack.pendingProfile = null;
+  return true;
+}
+
+function afterProfileApplied(kind, value) {
+  if (kind === "smart-vendor") {
+    st.selectedId =
+      st.masterStep === 2
+        ? "rack-cabinet"
+        : st.masterStep === 4
+          ? st.microwave.system === "CELLULAR"
+            ? "rf-system"
+            : "mw-system"
+          : st.selectedId;
+    rebuildSite();
+    toast(`${value} · ${cellularGeneration().label.toUpperCase()} · HARDWARE CURATED`);
+  } else if (kind === "smart-generation") {
+    st.selectedId =
+      st.masterStep === 2
+        ? "rack-cabinet"
+        : st.masterStep === 4
+          ? st.microwave.system === "CELLULAR"
+            ? "rf-system"
+            : "mw-system"
+          : st.selectedId;
+    rebuildSite();
+    toast(
+      `${cellularGeneration().label.toUpperCase()} · ${cellularGeneration().throughput} · PROFILE ACTIVE`
+    );
+  } else if (kind === "rack-vendor") {
+    st.masterStep = 2;
+    st.tab = "configure";
+    rebuildSite();
+    toast(`${value} ECOSYSTEM · ${rackHousing().model}`);
+  } else if (kind === "custom-gen-toggle") {
+    st.selectedId =
+      st.masterStep === 2
+        ? "rack-cabinet"
+        : st.masterStep === 4
+          ? st.microwave.system === "CELLULAR"
+            ? "rf-system"
+            : "mw-system"
+          : st.selectedId;
+    rebuildSite();
+    const custom = customGenerationMetrics();
+    toast(`${custom.label} · ${custom.throughput} · RACK & BACKHAUL UPDATED`);
+  }
+  renderDrawer();
+  updateHUD();
+}
+
+// Changing vendor or generation refits every card, so it asks first when the
+// engineer has fitted or removed cards by hand.
+function requestProfileChange(kind, value) {
+  const guard =
+    ((kind === "smart-vendor" || kind === "rack-vendor") &&
+      ["ERICSSON", "HUAWEI", "NOKIA"].includes(value)) ||
+    (kind === "smart-generation" && !!SMART_GENERATIONS[value]) ||
+    (kind === "custom-gen-toggle" && !!CUSTOM_GEN_CATALOG[value]);
+  if (!guard) return false;
+
+  const manual = manualSlotCount();
+  const pending = st.rack.pendingProfile;
+  if (manual > 0 && !(pending && pending.kind === kind && pending.value === value)) {
+    st.rack.pendingProfile = { kind, value, manual };
+    st.masterStep = 2;
+    st.tab = "configure";
+    renderDrawer();
+    return false;
+  }
+  commitHistory(kind);
+  if (!applyProfileChange(kind, value)) return false;
+  afterProfileApplied(kind, value);
+  return true;
+}
+
+function confirmProfileChange() {
+  const pending = st.rack.pendingProfile;
+  if (!pending) return false;
+  commitHistory(pending.kind);
+  if (!applyProfileChange(pending.kind, pending.value)) return false;
+  afterProfileApplied(pending.kind, pending.value);
+  toast(
+    `PROFILE APPLIED · ${pending.manual} MANUAL CARD ${pending.manual === 1 ? "EDIT" : "EDITS"} REPLACED`
+  );
+  return true;
+}
+
+function cancelProfileChange() {
+  st.rack.pendingProfile = null;
+  renderDrawer();
+  toast("PROFILE CHANGE CANCELLED");
+}
+
+function resetSlotsToProfile() {
+  commitHistory("rack-reset-profile");
+  st.rack.manualSlots = {};
+  st.rack.pendingProfile = null;
+  applySmartProfile();
+  normalizeState();
+  rebuildSite();
+  renderDrawer();
+  updateHUD();
+  toast("CARDS RESET TO THE PROFILE DEFAULTS");
+}
+
+// --- file export / import --------------------------------------------------
+function buildSiteFile() {
+  return JSON.stringify(
+    {
+      kind: SITE_FILE_KIND,
+      version: SITE_FILE_VERSION,
+      savedAt: new Date().toISOString(),
+      site: serializeSite(),
+    },
+    null,
+    2
+  );
+}
+
+function saveSiteToFile() {
+  try {
+    const blob = new Blob([buildSiteFile()], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `tower-studio-site-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    toast("SITE FILE SAVED");
+    return true;
+  } catch (_) {
+    toast("THIS BROWSER BLOCKED THE FILE DOWNLOAD");
+    return false;
+  }
+}
+
+function importSiteFile(text) {
+  let payload = null;
+  try {
+    payload = JSON.parse(text);
+  } catch (_) {
+    toast("THAT FILE IS NOT VALID JSON");
+    return false;
+  }
+  const issues = siteFileIssues(payload);
+  if (issues.length) {
+    toast(issues[0].toUpperCase());
+    return false;
+  }
+  commitHistory("open file");
+  const ok = applySite(payload.site, { reason: "SITE FILE OPENED" });
+  if (!ok) toast("THAT SITE FILE COULD NOT BE APPLIED");
+  return ok;
+}
+
+function openSiteFilePicker() {
+  const input = $("#site-file-input");
+  if (!input) return;
+  input.value = "";
+  input.click();
+}
+
+// --- start fresh -----------------------------------------------------------
+const DEFAULT_SITE_SNAPSHOT = JSON.stringify(serializeSite());
+
+function startFresh() {
+  commitHistory("start fresh");
+  clearWorkspace();
+  applySite(JSON.parse(DEFAULT_SITE_SNAPSHOT), { reason: "STARTED A FRESH SITE" });
+  st.restoreNotice = false;
+  renderDrawer();
 }
 
 // -------------------------------------------------------------------------
@@ -7091,6 +7838,9 @@ function setAIBuildStatus(status) {
 }
 
 function applyAIConfig(config) {
+  // Manual card edits are an engineer intent, not a profile artifact: keep the
+  // record so a later profile change still asks before overwriting them.
+  const manualSlots = { ...(st.rack.manualSlots || {}) };
   st.onboarding.active = false;
   st.env = config.env;
   st.tower = config.tower;
@@ -7098,7 +7848,7 @@ function applyAIConfig(config) {
   st.lightning = config.lightning;
   st.grounding = config.grounding;
   st.power = cloneAIConfig(config.power);
-  st.rack = cloneAIConfig(config.rack);
+  st.rack = { ...cloneAIConfig(config.rack), manualSlots, pendingProfile: null };
   st.generation = config.generation;
   st.microwave = cloneAIConfig(config.microwave);
   st.cellular = cloneAIConfig(config.cellular);
@@ -7161,6 +7911,72 @@ function prepareAIBuildVisuals() {
       aiBuild.powerRoutes.push({ object, count });
       object.geometry.setDrawRange(0, 0);
     });
+}
+
+// The plan card lets the engineer read what the offline parser understood
+// before anything is rebuilt (audit 9.6 #52).
+const AI_UNRECOGNISED_HINT =
+  "I did not recognise any site details in that request. Try naming an environment, a tower type, a height, a vendor or a generation — or pick one of the blueprints below.";
+
+function renderAIPlanCard(plan) {
+  const card = $("#ai-plan-card");
+  if (!card) return;
+  if (!plan) {
+    card.hidden = true;
+    card.innerHTML = "";
+    return;
+  }
+  card.hidden = false;
+  if (plan.unrecognised) {
+    card.innerHTML = `<div class="ai-plan-head"><strong>No site details recognised</strong></div><p class="ai-plan-note">${AI_UNRECOGNISED_HINT}</p><div class="ai-plan-actions"><button type="button" class="phase6-button" data-ai-plan="cancel">[ CLOSE ]</button></div>`;
+    return;
+  }
+  const rows = plan.intents
+    .map((intent) => `<li>${escapeHTML(typeof intent === "string" ? intent : String(intent))}</li>`)
+    .join("");
+  card.innerHTML = `<div class="ai-plan-head"><strong>Build this site?</strong><span>${escapeHTML(plan.summary || "")}</span></div><ul class="ai-plan-list">${rows}</ul><div class="ai-plan-actions"><button type="button" class="phase6-button primary" data-ai-plan="build">[ BUILD SITE ]</button><button type="button" class="phase6-button" data-ai-plan="cancel">[ CANCEL ]</button></div>`;
+}
+
+function requestAIBuild(prompt) {
+  if (aiBuild.running) return false;
+  const parsed = parseAIArchitect(prompt);
+  if (!parsed.prompt) {
+    toast("AI ARCHITECT · DESCRIBE A SITE OR SELECT A BLUEPRINT");
+    renderAIPlanCard(null);
+    st.ai.pendingPlan = null;
+    return false;
+  }
+  if (!parsed.intents || !parsed.intents.length) {
+    st.ai.pendingPlan = null;
+    renderAIPlanCard({ unrecognised: true });
+    setAIBuildStatus("NO SITE DETAILS RECOGNISED · TRY A BLUEPRINT");
+    return false;
+  }
+  st.ai.pendingPlan = parsed;
+  renderAIPlanCard(parsed);
+  setAIBuildStatus(
+    `${parsed.intents.length} CHANGE${parsed.intents.length === 1 ? "" : "S"} DETECTED · CONFIRM TO BUILD`
+  );
+  return true;
+}
+
+function confirmAIBuild() {
+  const plan = st.ai.pendingPlan;
+  if (!plan) return false;
+  st.ai.pendingPlan = null;
+  renderAIPlanCard(null);
+  commitHistory("ai build");
+  return startAIBuild(plan.prompt);
+}
+
+function cancelAIBuild() {
+  if (!st.ai.pendingPlan) {
+    renderAIPlanCard(null);
+    return;
+  }
+  st.ai.pendingPlan = null;
+  renderAIPlanCard(null);
+  setAIBuildStatus("BUILD CANCELLED · LOCAL NLP · OFFLINE INFERENCE · ZERO API KEYS");
 }
 
 function startAIBuild(prompt) {
@@ -7779,13 +8595,46 @@ function renderDrawer() {
     else button.removeAttribute("aria-current");
   });
   const content = $("#drawer-content");
+  const scrollTop = content.scrollTop;
+  const activeId = document.activeElement ? document.activeElement.id : "";
   content.innerHTML =
-    st.tab === "configure"
+    renderRestoreNotice() +
+    renderProfileConfirmCard() +
+    (st.tab === "configure"
       ? renderConfigure()
       : st.tab === "specs"
         ? renderSpecs()
-        : renderOverview();
+        : renderOverview());
+  content.scrollTop = scrollTop;
+  if (activeId) {
+    const restored = document.getElementById(activeId);
+    if (restored) restored.focus({ preventScroll: true });
+  }
+  updateMenuState();
   scrollTerminalOutput();
+}
+
+function renderRestoreNotice() {
+  if (!st.restoreNotice) return "";
+  return `<div class="restore-notice" role="status">
+    <div><strong>Restored your last site</strong><span>This browser kept your work from the last session. Nothing has been sent anywhere.</span></div>
+    <div class="restore-notice-actions">
+      <button type="button" class="phase6-button" data-action="dismiss-restore-notice">[ KEEP IT ]</button>
+      <button type="button" class="phase6-button" data-action="start-fresh">[ START FRESH ]</button>
+    </div>
+  </div>`;
+}
+
+function renderProfileConfirmCard() {
+  const pending = st.rack.pendingProfile;
+  if (!pending) return "";
+  return `<div class="profile-confirm" role="alertdialog" aria-label="Confirm profile change">
+    <div><strong>Replace ${pending.manual} manual card ${pending.manual === 1 ? "edit" : "edits"}?</strong><span>${escapeHTML(pendingProfileSummary())} refits every card in the cabinet. ${pending.manual} card${pending.manual === 1 ? "" : "s"} you fitted or removed by hand will be overwritten.</span></div>
+    <div class="profile-confirm-actions">
+      <button type="button" class="phase6-button primary" data-action="profile-confirm-apply">[ APPLY PROFILE ]</button>
+      <button type="button" class="phase6-button" data-action="profile-confirm-cancel">[ CANCEL ]</button>
+    </div>
+  </div>`;
 }
 
 function syncHUDScroll() {
@@ -8564,7 +9413,12 @@ function initHeroTab() {
       .join("");
   }
 
-  enterBtn?.addEventListener("click", () => setHeroOpen(false));
+  enterBtn?.addEventListener("click", () => {
+    setHeroOpen(false);
+    // The hero tab always comes first; the saved site is restored on entry so
+    // the first frame the user sees matches what they left (audit 9.6 #39).
+    restoreWorkspaceIfPresent();
+  });
   toggleBtn?.addEventListener("click", () => setHeroOpen(!st.heroOpen));
 
   let touchPointerId = null;
@@ -8705,6 +9559,10 @@ $("#drawer").addEventListener("click", (event) => {
   if (!button || button.disabled) return;
   const action = button.dataset.action;
   const value = button.dataset.value;
+  if (MUTATING_ACTIONS.has(action) && !PROFILE_ACTIONS.has(action)) {
+    // Triage options 1 and 3 only inspect or advise; 2 and 4 change the site.
+    if (!(action === "triage-choice" && value !== "2" && value !== "4")) commitHistory(action);
+  }
   if (action === "go-on-air") {
     goOnAir();
   } else if (action === "terminal-open") {
@@ -8833,58 +9691,22 @@ $("#drawer").addEventListener("click", (event) => {
     updateHUD();
     updateMicrowaveTone();
     toast(`LINK LOCKED · ${calculateMicrowave().rsl.toFixed(1)} dBm · 2.40 V`);
-  } else if (action === "smart-vendor" && ["ERICSSON", "HUAWEI", "NOKIA"].includes(value)) {
-    st.rack.vendor = value;
-    applySmartProfile();
-    st.selectedId =
-      st.masterStep === 2
-        ? "rack-cabinet"
-        : st.masterStep === 4
-          ? st.microwave.system === "CELLULAR"
-            ? "rf-system"
-            : "mw-system"
-          : st.selectedId;
-    rebuildSite();
-    toast(`${value} · ${cellularGeneration().label.toUpperCase()} · HARDWARE CURATED`);
-  } else if (action === "smart-generation" && SMART_GENERATIONS[value]) {
-    st.generation = value;
-    applySmartProfile();
-    st.selectedId =
-      st.masterStep === 2
-        ? "rack-cabinet"
-        : st.masterStep === 4
-          ? st.microwave.system === "CELLULAR"
-            ? "rf-system"
-            : "mw-system"
-          : st.selectedId;
-    rebuildSite();
-    toast(
-      `${cellularGeneration().label.toUpperCase()} · ${cellularGeneration().throughput} · PROFILE ACTIVE`
-    );
-  } else if (action === "custom-gen-toggle" && CUSTOM_GEN_CATALOG[value]) {
-    const current = normalizeCustomGenerations(st.customGenerations);
-    if (current.includes(value)) {
-      if (current.length <= 1) {
-        toast("SELECT AT LEAST ONE RADIO GENERATION");
-        return;
-      }
-      st.customGenerations = current.filter((item) => item !== value);
-    } else {
-      st.customGenerations = normalizeCustomGenerations([...current, value]);
-    }
-    st.generation = "CUSTOM";
-    applySmartProfile();
-    st.selectedId =
-      st.masterStep === 2
-        ? "rack-cabinet"
-        : st.masterStep === 4
-          ? st.microwave.system === "CELLULAR"
-            ? "rf-system"
-            : "mw-system"
-          : st.selectedId;
-    rebuildSite();
-    const custom = customGenerationMetrics();
-    toast(`${custom.label} · ${custom.throughput} · RACK & BACKHAUL UPDATED`);
+  } else if (action === "cv-restore") {
+    restoreCV(value);
+  } else if (action === "dismiss-restore-notice") {
+    st.restoreNotice = false;
+    renderDrawer();
+  } else if (action === "start-fresh") {
+    st.restoreNotice = false;
+    startFresh();
+  } else if (PROFILE_ACTIONS.has(action)) {
+    requestProfileChange(action, value);
+  } else if (action === "profile-confirm-apply") {
+    confirmProfileChange();
+  } else if (action === "profile-confirm-cancel") {
+    cancelProfileChange();
+  } else if (action === "rack-reset-profile") {
+    resetSlotsToProfile();
   } else if (action === "rf-sector" && [0, 1, 2].includes(Number(value))) {
     const index = Number(value),
       tab = st.tab;
@@ -8966,6 +9788,7 @@ $("#drawer").addEventListener("click", (event) => {
     isRackSlotCurated(value)
   ) {
     st.rack.slots[value] = !st.rack.slots[value];
+    syncManualSlot(value);
     st.masterStep = 2;
     st.tab = "configure";
     normalizeRackState();
@@ -9053,7 +9876,15 @@ $("#drawer").addEventListener("keydown", (event) => {
   event.target.value = history[st.terminal.historyIndex] || "";
 });
 
+// A slider drag or a group of checkbox ticks is one undoable action, so the
+// pre-change snapshot is taken when the control gains focus (before any value
+// changes) and committed once when the control settles (audit 9.6 #40).
+$("#drawer").addEventListener("focusin", (event) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) beginHistoryTransaction();
+});
+
 $("#drawer").addEventListener("input", (event) => {
+  beginHistoryTransaction();
   const rfInput = event.target.dataset.rfInput;
   if (rfInput) {
     const sector = st.cellular.sectors[st.cellular.sector];
@@ -9176,6 +10007,15 @@ $("#drawer").addEventListener("input", (event) => {
 });
 
 $("#drawer").addEventListener("change", (event) => {
+  const changeLabel =
+    event.target.dataset.rfInput ||
+    event.target.dataset.mwInput ||
+    event.target.dataset.rackInput ||
+    event.target.dataset.powerInput ||
+    event.target.dataset.powerChange ||
+    event.target.id ||
+    "change";
+  commitHistory(changeLabel);
   if (event.target.dataset.rfInput) {
     renderDrawer();
     return;
@@ -9251,15 +10091,91 @@ $("#drawer").addEventListener("pointerout", (event) => {
 
 $("#ai-architect-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  startAIBuild($("#ai-architect-input").value);
+  requestAIBuild($("#ai-architect-input").value);
+});
+$("#ai-plan-card").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-ai-plan]");
+  if (!button) return;
+  if (button.dataset.aiPlan === "build") confirmAIBuild();
+  else cancelAIBuild();
 });
 $("#ai-close-button").addEventListener("click", () => setAIArchitectOpen(false));
 $("#ai-mobile-toggle").addEventListener("click", () => setAIArchitectOpen(true));
 document.querySelectorAll("[data-ai-scenario]").forEach((button) => {
   button.addEventListener("click", () => {
     const blueprint = AI_BLUEPRINTS[button.dataset.aiScenario];
-    if (blueprint) startAIBuild(blueprint.prompt);
+    if (blueprint) requestAIBuild(blueprint.prompt);
   });
+});
+
+// --- workspace menu, file import/export, dialogs ----------------------------
+function setDetailLevel(level) {
+  st.detail = level === "ENGINEER" ? "ENGINEER" : "GUIDED";
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(DETAIL_STORAGE_KEY, st.detail);
+  } catch (_) {
+    /* Storage may be unavailable. */
+  }
+  updateMenuState();
+  renderDrawer();
+}
+
+function readDetailLevel() {
+  try {
+    if (typeof localStorage === "undefined") return "GUIDED";
+    return localStorage.getItem(DETAIL_STORAGE_KEY) === "ENGINEER" ? "ENGINEER" : "GUIDED";
+  } catch (_) {
+    return "GUIDED";
+  }
+}
+
+$("#menu-toggle").addEventListener("click", (event) => {
+  event.stopPropagation();
+  setMenuOpen($("#menu-panel").hidden);
+});
+$("#menu-panel").addEventListener("click", (event) => {
+  const item = event.target.closest("[data-action]");
+  if (!item) return;
+  const action = item.dataset.action;
+  setMenuOpen(false);
+  if (action === "menu-undo") undo();
+  else if (action === "menu-redo") redo();
+  else if (action === "menu-save-file") saveSiteToFile();
+  else if (action === "menu-open-file") openSiteFilePicker();
+  else if (action === "menu-start-fresh") startFresh();
+  else if (action === "menu-detail-level")
+    setDetailLevel(st.detail === "ENGINEER" ? "GUIDED" : "ENGINEER");
+  else if (action === "menu-shortcuts") openShortcutsModal();
+  updateMenuState();
+});
+document.addEventListener("click", (event) => {
+  const panel = $("#menu-panel");
+  if (!panel || panel.hidden) return;
+  if (event.target.closest("#menu-panel") || event.target.closest("#menu-toggle")) return;
+  setMenuOpen(false);
+});
+$("#undo-button").addEventListener("click", () => {
+  undo();
+  updateMenuState();
+});
+$("#redo-button").addEventListener("click", () => {
+  redo();
+  updateMenuState();
+});
+$("#site-file-input").addEventListener("change", (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => importSiteFile(String(reader.result));
+  reader.onerror = () => toast("THAT FILE COULD NOT BE READ");
+  reader.readAsText(file);
+});
+$("#shortcuts-modal").addEventListener("click", (event) => {
+  if (
+    event.target.id === "shortcuts-modal" ||
+    event.target.closest('[data-action="close-shortcuts"]')
+  )
+    closeShortcutsModal();
 });
 
 $("#terminal-toggle").addEventListener("click", toggleTerminal);
@@ -9465,8 +10381,23 @@ $("#zoom-out").addEventListener("click", () => {
   cameraGoal.size = clamp(cameraGoal.size * 1.22, 0.32, 150);
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName))
+  const active = document.activeElement;
+  const typing =
+    active &&
+    (["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) || active.isContentEditable);
+  if (event.key === "Escape" && !typing) {
+    closeMenuPanel();
+    closeShortcutsModal();
     clearSelection();
+    return;
+  }
+  // Undo/redo must not steal the browser's own text undo inside a field.
+  if (typing || !(event.ctrlKey || event.metaKey)) return;
+  if (event.key.toLowerCase() !== "z") return;
+  event.preventDefault();
+  if (event.shiftKey) redo();
+  else undo();
+  updateMenuState();
 });
 
 function updateSelectionTag() {
@@ -9616,10 +10547,45 @@ window.TowerStudio = {
   rebuild: rebuildSite,
   code: codeSnippet,
 };
+window.TowerStudio.saveWorkspace = saveWorkspace;
+window.TowerStudio.readWorkspace = readWorkspace;
+window.TowerStudio.clearWorkspace = clearWorkspace;
+window.TowerStudio.serializeSite = serializeSite;
+window.TowerStudio.normalizeSiteData = normalizeSiteData;
+window.TowerStudio.siteFileIssues = siteFileIssues;
+window.TowerStudio.applySite = applySite;
+window.TowerStudio.buildSiteFile = buildSiteFile;
+window.TowerStudio.importSiteFile = importSiteFile;
+window.TowerStudio.startFresh = startFresh;
+window.TowerStudio.restoreWorkspaceIfPresent = restoreWorkspaceIfPresent;
+window.TowerStudio.undo = undo;
+window.TowerStudio.redo = redo;
+window.TowerStudio.canUndo = canUndo;
+window.TowerStudio.canRedo = canRedo;
+window.TowerStudio.commitHistory = commitHistory;
+window.TowerStudio.beginHistoryTransaction = beginHistoryTransaction;
+window.TowerStudio.restoreCV = restoreCV;
+window.TowerStudio.requestAIBuild = requestAIBuild;
+window.TowerStudio.confirmAIBuild = confirmAIBuild;
+window.TowerStudio.cancelAIBuild = cancelAIBuild;
+window.TowerStudio.requestProfileChange = requestProfileChange;
+window.TowerStudio.confirmProfileChange = confirmProfileChange;
+window.TowerStudio.cancelProfileChange = cancelProfileChange;
+window.TowerStudio.resetSlotsToProfile = resetSlotsToProfile;
+window.TowerStudio.setDetailLevel = setDetailLevel;
+window.TowerStudio.readDetailLevel = readDetailLevel;
+window.TowerStudio.normalizeState = normalizeState;
+window.TowerStudio.runCLI = executeCLI;
+window.TowerStudio.manualSlotCount = manualSlotCount;
+window.TowerStudio.syncManualSlot = syncManualSlot;
 window.CellForge = window.TowerStudio;
 
 setAIArchitectOpen(st.ai.architectOpen);
 syncAIArchitect();
+// The detail level survives reloads on its own key so a beginner is not
+// dropped into engineer mode, and an engineer is not dropped into guided mode.
+st.detail = readDetailLevel();
+updateMenuState();
 rebuildSite();
 syncHUDScroll();
 fitSite(true);

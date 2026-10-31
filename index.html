@@ -141,8 +141,89 @@
           TERMINAL
         </button>
         <button class="icon-button" id="fit-site">FIT SITE</button>
+        <button class="icon-button undo-redo" id="undo-button" type="button" aria-label="Undo">
+          &#8630;
+        </button>
+        <button class="icon-button undo-redo" id="redo-button" type="button" aria-label="Redo">
+          &#8631;
+        </button>
+        <button
+          class="icon-button menu-toggle"
+          id="menu-toggle"
+          type="button"
+          aria-label="Open workspace menu"
+          aria-expanded="false"
+          aria-haspopup="true"
+        >
+          &#8942;
+        </button>
       </div>
     </header>
+
+    <div class="menu-panel" id="menu-panel" role="menu" aria-label="Workspace menu" hidden>
+      <button type="button" role="menuitem" data-action="menu-undo">
+        Undo<small>Ctrl/&#8984;+Z</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-redo">
+        Redo<small>Ctrl/&#8984;+Shift+Z</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-save-file">
+        Save site to file<small>.json</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-open-file">
+        Open site file<small>.json</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-detail-level" id="menu-detail-level">
+        Detail level: Guided<small>Show every control</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-start-fresh">
+        Start fresh<small>Clear autosave</small>
+      </button>
+      <button type="button" role="menuitem" data-action="menu-shortcuts">
+        Shortcuts &amp; help<small>Keyboard &amp; touch</small>
+      </button>
+    </div>
+    <input
+      type="file"
+      id="site-file-input"
+      accept="application/json,.json"
+      aria-label="Open a saved Tower Studio site file"
+      hidden
+    />
+
+    <div class="modal-scrim" id="shortcuts-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div class="modal-head">
+          <h2 id="shortcuts-title">Shortcuts &amp; help</h2>
+          <button
+            type="button"
+            class="modal-close"
+            data-action="close-shortcuts"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+        <dl class="shortcut-list">
+          <dt>Ctrl / &#8984; + Z</dt>
+          <dd>Undo the last site change</dd>
+          <dt>Ctrl / &#8984; + Shift + Z</dt>
+          <dd>Redo the change you just undid</dd>
+          <dt>Esc</dt>
+          <dd>Deselect the current 3D object (you stay in the same step)</dd>
+          <dt>Drag</dt>
+          <dd>Orbit the site</dd>
+          <dt>Wheel / pinch</dt>
+          <dd>Zoom in and out</dd>
+          <dt>Click an object</dt>
+          <dd>Inspect it in the drawer</dd>
+        </dl>
+        <p class="modal-note">
+          Your work is saved in this browser automatically and can also be exported to a file from
+          the &#8942; menu.
+        </p>
+      </div>
+    </div>
 
     <div class="site-hud-shell" id="site-hud-shell">
       <button
@@ -204,6 +285,13 @@
             🚨 Emergency Border Outpost (COW)
           </button>
         </div>
+        <div
+          class="ai-plan-card"
+          id="ai-plan-card"
+          role="dialog"
+          aria-label="AI build plan"
+          hidden
+        ></div>
         <div class="ai-build-status" id="ai-build-status" role="status">
           LOCAL NLP · OFFLINE INFERENCE · ZERO API KEYS
         </div>

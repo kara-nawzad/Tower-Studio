@@ -50,6 +50,23 @@ This guide shows how to add new hardware models, CLI commands, or offline AI sce
 > `tests/vendor-catalogue.test.mjs` fails if any vendor x generation combination
 > shows a competitor's brand or model name anywhere in the drawer or CLI output.
 
+### 2b. Persisted Site State
+
+`serializeSite()` defines what a saved site is. When you add a new setting:
+
+1. Add it to `serializeSite()`.
+2. Read and **clamp** it in `normalizeSiteData()`, which is the single validation
+   gate for localStorage autosave, undo/redo, `.json` files and `cvrestore`.
+3. Restore it in `applySite()`.
+
+Anything you leave out is treated as a simulation transient and is re-derived
+after every restore. Never persist `powerSim`, `cellularSim`, `rackSim`,
+`launch`, `aiBuild`, sweep traces or terminal scrollback.
+
+New mutating `data-action` values must be listed in `MUTATING_ACTIONS` so they
+become undoable, or in `PROFILE_ACTIONS` if they refit the whole card profile
+and therefore need the overwrite confirmation.
+
 ### 3. Adding a Vendor CLI Command (Step 05)
 
 1. Locate `ericssonCLI()`, `huaweiCLI()`, or `nokiaCLI()` in `src/js/app.js`.
