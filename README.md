@@ -22,6 +22,11 @@ An interactive 3D telecom tower, power plant, 19-inch equipment cabinet, microwa
 
 Tower Studio turns complex telecommunications site engineering into an interactive, plain-English 3D learning and simulation studio:
 
+- **Guided Branching Flow (5 Steps):** The whole studio is organized as `01 Site` → `02 Open cabinet` → `03 Power` → `04 Aim & Connect` → `05 Go on air`. Each step shows only the choices that apply to what you already picked (a rooftop site never asks about soil bearing; a `1+0` link never asks about XPIC). Every step is badged **Done**, **Needs attention**, or **Locked**, and every locked control prints the reason next to it in plain text — not only in a hover tooltip, which never appears on a phone.
+- **Two Detail Levels:** Switch between **Guided** (plain language, deep specs folded behind _More options_) and **Engineer** (every row inline with full units). The choice is remembered per browser. 28 terms — VSWR, fade margin, N+1, autonomy, earth loop, torsion, and more — are dotted-underline buttons that open a one-line definition on tap, hover, or keyboard focus.
+- **Save, Undo, and Autosave:** Your site autosaves to `localStorage` (debounced 400 ms) and can be exported or re-imported as a versioned JSON **site file**. Undo/redo keeps 50 steps, and destructive actions ask for confirmation before discarding work.
+- **Phone and Laptop Are Equal Priorities:** One scrolling panel on small screens, ≥ 44 × 44 px tap targets, and camera framing derived from the real drawer/sheet geometry rather than fixed offsets.
+
 - **3D Civil & Tower Engine (Step 01 · Site):** Choose between 4 site environments (_Mountain Peak_, _Urban Rooftop_, _Rural Greenfield_, and _Emergency Disaster COW_) and 7 engineered tower structures (3-leg tubular lattice, 4-leg angular lattice, rooftop RTT/DRAME on dunnage, parapet pole, light monopole, guyed mast, and telescopic COW truck). Includes live structural twist checks, perimeter security fencing, 70 mm² copper bonding, inspection earth pits, and lightning protection.
 - **Multi-Vendor 19-Inch Cabinet & Alarm Highway (Step 02 · Open cabinet):** Inspect indoor and IP55 outdoor enclosures for **Ericsson**, **Huawei**, and **Nokia**. Swing open the 3D cabinet door, click individual rack cards (radios, baseband, power shelf, router, TDM, microwave modem), patch the animated yellow Router-to-TDM E1 cable, and trace external alarms from the surge box to the Network Operations Center (NOC).
 - **AC/DC Power Plant & Blackout Simulator (Step 03 · Power):** Models the complete telecom power chain—commercial utility grid, single or dual alternating diesel generators, Automatic Transfer Switch (ATS), Main Distribution Board (MDB), −48 V DC bus, N+1 3 kW rectifier shelves, VRLA/Lithium battery banks, bulk fuel tank, and dual-split air conditioning. Trigger **Simulate Power Blackout** to watch 0.000 ms battery holdover, generator cranking, and 15-second ATS load transfer.
@@ -39,7 +44,7 @@ Tower Studio turns complex telecommunications site engineering into an interacti
 ## Tech Stack
 
 - **Frontend Markup & Layout:** Semantic HTML5, responsive CSS3 custom properties (desktop docked drawer + mobile touch-target layout with `prefers-reduced-motion` support)
-- **3D Engine & Graphics:** [Three.js r128](https://threejs.org/) (orthographic CAD camera, procedural 3D meshes, raycast object picking) + inline dynamic SVG charts
+- **3D Engine & Graphics:** [Three.js r128](https://threejs.org/) (orthographic CAD camera, procedural 3D meshes, raycast object picking) + inline dynamic SVG charts. The CDN `<script>` is pinned with a Subresource Integrity hash and falls back to the bundled `vendor/three.min.js` (MIT) if the network is unavailable
 - **Application Logic:** Vanilla ES6+ JavaScript (build-free execution, deterministic engineering & offline AI engines)
 - **Audio & Typography:** Browser Web Audio API (procedural alignment tones & launch chime), Google Fonts (_Barlow_, _Barlow Condensed_, _Space Mono_)
 - **Developer Tooling & CI:** Node.js (≥ 20), built-in `node:test` suite, ESLint, Prettier, EditorConfig, and GitHub Actions
@@ -74,7 +79,16 @@ Tower-Studio/
 │   └── styles/
 │       └── main.css               # Editorial CAD theme, drawer, HUD & responsive styles
 ├── tests/
-│   └── app.test.mjs               # Automated structure, HTTP, and runtime smoke tests
+│   ├── app.test.mjs               # Structure, HTTP, and runtime smoke tests
+│   ├── flow.test.mjs              # Guided 5-step flow, locking & gating behaviour
+│   ├── glossary.test.mjs          # Detail levels & plain-language term popovers
+│   ├── hardening.test.mjs         # HUD diffing, rebuild throttle, SRI & hero encodings
+│   ├── responsive.test.mjs        # Phone / tablet / desktop layout contracts
+│   └── helpers/
+│       └── headless.mjs           # Shared jsdom + Three.js stub harness
+├── vendor/
+│   ├── three.min.js               # Offline fallback copy of Three.js r128 (MIT)
+│   └── THREE-LICENSE.txt          # Three.js MIT licence notice
 ├── .editorconfig                  # Cross-editor indentation & line-ending rules
 ├── .env.example                   # Optional local dev-server environment variables
 ├── .gitignore                     # Ignored dependencies, build artifacts & OS files
@@ -83,6 +97,9 @@ Tower-Studio/
 ├── CHANGELOG.md                   # Version history starting at 1.0.0
 ├── CONTRIBUTING.md                # Step-by-step contributor guide
 ├── eslint.config.mjs              # ESLint flat configuration
+├── herotower.PNG                  # Original hero artwork (kept as the final fallback)
+├── herotower.webp                 # Hero artwork, modern encoding (394 kB)
+├── herotower.avif                 # Hero artwork, smallest encoding (224 kB)
 ├── index.html                     # Root application entry point (GitHub Pages ready)
 ├── LICENSE                        # MIT License
 ├── package-lock.json              # Locked dependency versions for reproducible CI
@@ -109,7 +126,7 @@ Tower Studio has **zero build requirement** to run in a browser, and includes st
      ```bash
      python3 -m http.server 3000
      ```
-   - Visit `http://localhost:3000` in your browser. _(An internet connection is required on first load so the browser can fetch Three.js r128 and Google Fonts from their CDNs.)_
+   - Visit `http://localhost:3000` in your browser. _(Google Fonts are fetched from their CDN on first load. Three.js r128 is fetched from its CDN with an SRI check and automatically falls back to the bundled offline copy in `vendor/` if that fails, so the 3D scene still works with no network.)_
 
 ### Option B: Developer Setup (Node.js ≥ 20)
 

@@ -4889,14 +4889,18 @@ function rebuildSite() {
   renderDrawer();
 }
 
-let rebuildQueued = false;
+// Rebuilding the whole site is the most expensive thing the app does, and a
+// slider drag can ask for it sixty times a second. Coalesce requests into one
+// rebuild per ~80 ms (audit 9.6 #61).
+const REBUILD_THROTTLE_MS = 80;
+let rebuildTimer = null;
+
 function scheduleRebuild() {
-  if (rebuildQueued) return;
-  rebuildQueued = true;
-  requestAnimationFrame(() => {
-    rebuildQueued = false;
+  if (rebuildTimer) return;
+  rebuildTimer = setTimeout(() => {
+    rebuildTimer = null;
     rebuildSite();
-  });
+  }, REBUILD_THROTTLE_MS);
 }
 
 function selectComponent(id, focus = true) {
@@ -9058,15 +9062,27 @@ function updateHUD() {
   const livePill = $("#live-pill");
   if (st.onboarding.active && !launch.onAir && !aiBuild.running) {
     hud.classList.add("is-setup");
-    hud.innerHTML = `
-      <div class="hud-cell hud-setup" id="hud-setup-status"><small>Site Status</small><strong>[ Setting up ]</strong></div>
-      <div class="hud-cell"><small>Environment</small><strong>${ENVIRONMENTS[st.env].name}</strong></div>
-      <div class="hud-cell"><small>Structure</small><strong>${st.onboarding.towerSelected ? `${TOWERS[st.tower].short} · ${st.H} m` : "Choose tower below"}</strong></div>
-      <div class="hud-cell hud-setup-hint"><small>Guided Setup</small><strong>Pick tower &amp; height in Step 01 to unlock full live telemetry</strong></div>`;
+    renderHUDCells(hud, "setup", [
+      { key: "status", label: "Site Status", value: "[ Setting up ]", cellClass: "hud-setup" },
+      { key: "env", label: "Environment", value: ENVIRONMENTS[st.env].name },
+      {
+        key: "structure",
+        label: "Structure",
+        value: st.onboarding.towerSelected
+          ? `${TOWERS[st.tower].short} · ${st.H} m`
+          : "Choose tower below",
+      },
+      {
+        key: "hint",
+        label: "Guided Setup",
+        value: "Pick tower & height in Step 01 to unlock full live telemetry",
+        cellClass: "hud-setup-hint",
+      },
+    ]);
     hud.scrollLeft = 0;
     livePill.classList.remove("on-air");
     livePill.classList.add("setup");
-    livePill.querySelector("span").textContent = "SETTING UP";
+    setLivePillText(livePill, "SETTING UP");
     syncHUDScroll();
     return;
   }
@@ -9075,30 +9091,116 @@ function updateHUD() {
   const microwave = calculateMicrowave();
   const alarms = powerAlarms();
   const eventActive = powerSim.phase !== "NORMAL" || alarms.length > 0;
-  hud.innerHTML = `
-    <div class="hud-cell ${launch.onAir ? "hud-on-air" : ""}" id="hud-site-status"><small>Site status</small><strong>${launch.onAir ? `[ On air ] • ${calc.totalLoad.toFixed(2)} kW • ${calc.autonomy.toFixed(1)} h • ${cellularThroughputGbps()} Gbps` : "[ Live model ]"}</strong></div>
-    <div class="hud-cell"><small>Environment</small><strong>${ENVIRONMENTS[st.env].name}</strong></div>
-    <div class="hud-cell"><small>Structure</small><strong>${TOWERS[st.tower].short} · ${st.H} m</strong></div>
-    <div class="hud-cell"><small>Total load</small><strong>${calc.totalLoad.toFixed(2)} kW</strong></div>
-    <div class="hud-cell"><small>Backup hours</small><strong>${calc.autonomy.toFixed(1)} h</strong></div>
-    <div class="hud-cell"><small>Backhaul speed</small><strong>${formatCapacity(microwave.capacityMbps)}</strong></div>
-    <div class="hud-cell"><small>Cellular ${cellularGeneration().label}</small><strong data-live="rf-hud-throughput">${cellularGeneration().throughput}</strong></div>
-    <div class="hud-cell"><small>Microwave RSL</small><strong class="${microwave.locked ? "green" : "amber"}">${microwave.rsl.toFixed(1)} dBm</strong></div>
-    <div class="hud-cell"><small>Fade margin</small><strong>${microwave.fadeMargin.toFixed(1)} dB</strong></div>
-    <div class="hud-cell"><small>Rectifier N+1</small><strong class="${calc.n1Pass ? "green" : "red"}">${calc.n1Pass ? "PASS" : "WARN"} · ${calc.installed} INST / ${calc.required + 1} REQ</strong></div>
-    <div class="hud-cell"><small>AC source</small><strong>${sourceLabel()}</strong></div>
-    ${
-      eventActive
-        ? `<div class="hud-cell"><small>Fuel consumption</small><strong>${calc.fuelRate.toFixed(2)} L/h</strong></div>
-    <div class="hud-cell"><small>Battery discharge</small><strong>${calc.batteryCurrent.toFixed(1)} A</strong></div>
-    <div class="hud-cell"><small>Active alarms · ${alarms.length}</small><strong class="${alarms.length ? "red" : "green"}">${alarms.length ? alarms[0].label : "None"}</strong></div>`
-        : ""
-    }`;
+  const cells = [
+    {
+      key: "status",
+      id: "hud-site-status",
+      label: "Site status",
+      value: launch.onAir
+        ? `[ On air ] • ${calc.totalLoad.toFixed(2)} kW • ${calc.autonomy.toFixed(1)} h • ${cellularThroughputGbps()} Gbps`
+        : "[ Live model ]",
+      cellClass: launch.onAir ? "hud-on-air" : "",
+    },
+    { key: "env", label: "Environment", value: ENVIRONMENTS[st.env].name },
+    { key: "structure", label: "Structure", value: `${TOWERS[st.tower].short} · ${st.H} m` },
+    { key: "load", label: "Total load", value: `${calc.totalLoad.toFixed(2)} kW` },
+    { key: "backup", label: "Backup hours", value: `${calc.autonomy.toFixed(1)} h` },
+    { key: "backhaul", label: "Backhaul speed", value: formatCapacity(microwave.capacityMbps) },
+    {
+      key: "cellular",
+      label: `Cellular ${cellularGeneration().label}`,
+      value: cellularGeneration().throughput,
+      live: "rf-hud-throughput",
+    },
+    {
+      key: "rsl",
+      label: "Microwave RSL",
+      value: `${microwave.rsl.toFixed(1)} dBm`,
+      valueClass: microwave.locked ? "green" : "amber",
+    },
+    { key: "fade", label: "Fade margin", value: `${microwave.fadeMargin.toFixed(1)} dB` },
+    {
+      key: "n1",
+      label: "Rectifier N+1",
+      value: `${calc.n1Pass ? "PASS" : "WARN"} · ${calc.installed} INST / ${calc.required + 1} REQ`,
+      valueClass: calc.n1Pass ? "green" : "red",
+    },
+    { key: "source", label: "AC source", value: sourceLabel() },
+  ];
+  if (eventActive) {
+    cells.push({
+      key: "fuel",
+      label: "Fuel consumption",
+      value: `${calc.fuelRate.toFixed(2)} L/h`,
+    });
+    cells.push({
+      key: "battery",
+      label: "Battery discharge",
+      value: `${calc.batteryCurrent.toFixed(1)} A`,
+    });
+    cells.push({
+      key: "alarms",
+      label: `Active alarms · ${alarms.length}`,
+      value: alarms.length ? alarms[0].label : "None",
+      valueClass: alarms.length ? "red" : "green",
+    });
+  }
+  renderHUDCells(hud, "live", cells);
   hud.scrollLeft = scroll;
   livePill.classList.remove("setup");
   livePill.classList.toggle("on-air", launch.onAir);
-  livePill.querySelector("span").textContent = launch.onAir ? "ON AIR" : "LIVE MODEL";
+  setLivePillText(livePill, launch.onAir ? "ON AIR" : "LIVE MODEL");
   syncHUDScroll();
+}
+
+const HUD_STATE = new WeakMap();
+
+function setLivePillText(pill, text) {
+  const span = pill.querySelector("span");
+  if (span && span.textContent !== text) span.textContent = text;
+}
+
+// Diff-update: the telemetry bar is redrawn many times a second, so only the
+// cells whose text or class actually changed are touched (audit 9.6 #62).
+function renderHUDCells(hud, mode, cells) {
+  const signature = `${mode}:${cells.length}`;
+  let state = HUD_STATE.get(hud);
+  if (!state || state.signature !== signature) {
+    hud.innerHTML = cells
+      .map(
+        (cell, index) =>
+          `<div class="hud-cell" data-hud-cell="${index}"><small></small><strong></strong></div>`
+      )
+      .join("");
+    state = { signature, cells: [] };
+    HUD_STATE.set(hud, state);
+  }
+  const nodes = hud.children;
+  for (let index = 0; index < cells.length; index += 1) {
+    const cell = cells[index];
+    const node = nodes[index];
+    if (!node) continue;
+    const previous = state.cells[index];
+    const small = node.querySelector("small");
+    const strong = node.querySelector("strong");
+    if (!previous || previous.label !== cell.label) small.textContent = cell.label;
+    if (!previous || previous.value !== cell.value) strong.textContent = cell.value;
+    if (!previous || previous.cellClass !== (cell.cellClass || "")) {
+      node.className = `hud-cell ${cell.cellClass || ""}`.trim();
+    }
+    if (!previous || previous.valueClass !== (cell.valueClass || "")) {
+      strong.className = cell.valueClass || "";
+    }
+    if (!previous || previous.id !== (cell.id || "")) {
+      if (cell.id) node.id = cell.id;
+      else if (node.id && node.id.startsWith("hud-")) node.removeAttribute("id");
+    }
+    if (!previous || previous.live !== (cell.live || "")) {
+      if (cell.live) strong.setAttribute("data-live", cell.live);
+      else strong.removeAttribute("data-live");
+    }
+  }
+  state.cells = cells;
 }
 
 let toastTimer;
@@ -11145,6 +11247,8 @@ window.TowerStudio.isTouchPointer = isTouchPointer;
 window.TowerStudio.frustumShifts = frustumShifts;
 window.TowerStudio.measureChrome = measureChrome;
 window.TowerStudio.chromeMetrics = chromeMetrics;
+window.TowerStudio.scheduleRebuild = scheduleRebuild;
+window.TowerStudio.REBUILD_THROTTLE_MS = REBUILD_THROTTLE_MS;
 window.TowerStudio.setSheet = setSheet;
 window.TowerStudio.cycleSheet = cycleSheet;
 window.TowerStudio.focusSizeMultiplier = focusSizeMultiplier;

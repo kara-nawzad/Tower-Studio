@@ -453,9 +453,82 @@ TowerStudio.triage
 
 A useful manual acceptance pass is: build all three chips; parse a custom multi-intent prompt; confirm the five assembly checkpoints; classify healthy and faulty 601-point traces; run all three Copilot choices after a blackout and RF fault; verify a new RF/grounding failure suspends launch; and repeat the five steps at 390px and 430px with the browser console open.
 
+## Guided flow, detail levels & glossary
+
+The interface is organized as five master steps with an explicit gate between them:
+
+| Step | Label             | Done when                                                                  | Locked until             |
+| ---- | ----------------- | -------------------------------------------------------------------------- | ------------------------ |
+| 01   | **Site**          | The site setup walkthrough is finished                                     | Never — always open      |
+| 02   | **Open cabinet**  | At least one card is fitted                                                | Never                    |
+| 03   | **Power**         | Rectifier N+1 **and** failover checks both pass                            | Step 02 is done          |
+| 04   | **Aim & Connect** | Microwave: the link is locked. Cellular: at least one sector sweep has run | Step 02 is done          |
+| 05   | **Go on air**     | The site is on air                                                         | Steps 03 **and** 04 done |
+
+Step 04 branches into **4A Backhaul** (microwave dishes and link budget) and
+**4B Sectors** (cellular RF and line sweeps); only the selected branch's controls
+render. The six carrier acceptance gates surface from step 02 onward, so nothing
+can pass in the strip and fail in the audit.
+
+A step renders as **Done**, **Needs attention**, or **Locked**. Locked steps and
+disabled controls always print their reason as visible text next to the control
+(the `title` attribute is kept, but is not sufficient on touch devices).
+
+### Detail levels
+
+`Guided` (default) folds the _Specs and details_ sections behind a
+`More options` `<details>` and prefers plain wording. `Engineer` renders every row
+inline with full units. The choice is stored in `localStorage` under
+`tower-studio.detail.v1` and read by `isEngineerMode()`.
+
+### Glossary keys
+
+`GLOSSARY` maps 28 uppercase keys to one-sentence definitions; `Term(key, label)`
+renders them as a `<button class="term">` with a `.term-def` popover:
+
+```text
+VSWR · DTF · RSL · FADE MARGIN · N+1 · AUTONOMY · ATS · EARTH LOOP · DEAD LOAD ·
+WIND AREA · TORSION · SOIL BEARING · BACKHAUL · XPIC · SPACE DIVERSITY · SECTOR ·
+BASEBAND · PATCH CABLE · ALARM HIGHWAY · ON AIR · CONFIGURATION VERSION · DC LOAD ·
+CLI · MO · dBi · dBm · E1 · HVAC
+```
+
+The six acceptance gates are annotated with a representative term through
+`GATE_TERMS`: civil → `TORSION`, earthing → `EARTH LOOP`, power → `N+1`,
+backhaul → `BACKHAUL`, rf → `VSWR`, alarms → `ALARM HIGHWAY`.
+
+### Runtime constants
+
+```text
+WORKSPACE_STORAGE_KEY  = "tower-studio.workspace.v1"   # autosave
+DETAIL_STORAGE_KEY     = "tower-studio.detail.v1"      # Guided / Engineer
+SITE_FILE_KIND         = "tower-studio/site"           # exported JSON
+SITE_FILE_VERSION      = 1
+HISTORY_LIMIT          = 50                            # undo / redo depth
+AUTOSAVE_DELAY         = 400                           # ms, debounce
+REBUILD_THROTTLE_MS    = 80                            # ms, leading edge
+GESTURE_HINT_KEY       = "tower-studio.gesture-hint.v1"
+```
+
+### Live HUD contract
+
+`updateHUD()` builds a plain cell list and hands it to `renderHUDCells()`:
+
+- **Setup mode — 4 cells:** `[ Setting up ]`, Environment, Structure, guided-setup
+  hint.
+- **Live mode — 11 cells:** status (`#hud-site-status`, `[ Live model ]` or
+  `[ On air ] • … kW • … h • … Gbps`), Environment, Structure, Total load,
+  Backup hours, Backhaul speed, Cellular generation, Microwave RSL, Fade margin,
+  Rectifier N+1, AC source.
+- **Live mode with an active event or alarms — 14 cells:** the 11 above plus Fuel
+  consumption, Battery discharge, and `Active alarms · n`.
+
+Cells are reused across updates; only changed label / value / class / id /
+`data-live` attributes are written.
+
 ## Controls
 
-- **Five master steps:** Site, Open cabinet, Power, Aim & Connect, and Go on air.
+- **Five master steps:** Site, Open cabinet, Power, Aim & Connect (4A Backhaul / 4B Sectors), and Go on air.
 - **Drag** to orbit; **wheel/pinch** to zoom.
 - **Click** civil, power, rack, microwave, antenna, TMA, or RF cabling equipment to inspect it.
 - Click the cabinet door to swing it open or closed; click internal cards to zoom into their inspectors.
@@ -465,7 +538,11 @@ A useful manual acceptance pass is: build all three chips; parse a custom multi-
 - **AI BUILD** assembles the prompt/chip blueprint; **× / AI** dismisses or reopens the architect bar.
 - **AI Waveform Diagnostic** classifies the selected sector in Step 04.
 - **AI Copilot** or `ai diagnose` opens guided NOC triage; use the three buttons or type `1`, `2`, or `3`.
-- Desktop and mobile drawer layouts support Overview, Configure, and Specs tabs.
+- Desktop uses a side drawer and mobile a bottom sheet; both render the same single scrolling panel for the active step.
+- **Guided / Engineer** switches the detail level; the choice is remembered per browser.
+- Dotted-underline terms open a definition popover on tap, hover, or keyboard focus; **Escape** closes it.
+- **Undo / redo** walk a 50-step history; the site autosaves 400 ms after the last change.
+- Saving, loading, and starting fresh all ask for confirmation before discarding work.
 
 ## Engineering basis
 

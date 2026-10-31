@@ -4,6 +4,81 @@ All notable changes to **Tower Studio** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Guided Flow Redesign (Phases 0–7)
+
+A ground-up reorganization of the Tower Studio interface into a **guided, branching
+workflow** that a first-time user can follow, while staying numerically and
+terminologically credible to senior telecom engineers. Phone and laptop are treated
+as equal priorities. The 3D scene, the color palette, the typography, the default
+engineering numbers, and the public `window.TowerStudio` API are unchanged.
+
+### Added
+
+- **Guided branching flow (Phase 3):** Five master steps (`01 Site`, `02 Open
+cabinet`, `03 Power`, `04 Aim & Connect` → `4A Backhaul` / `4B Sectors`,
+  `05 Go on air`). Each step shows its own panel, marks itself
+  **Done** or **Needs attention**, and keeps later steps **locked** until the
+  prerequisites are satisfied — every locked control carries a visible text reason
+  next to it (not only a `title` tooltip, which never shows on touch devices).
+- **Detail levels (Phase 5):** A `Guided` / `Engineer` switch. `Guided` collapses
+  the _Specs and details_ sections behind a `More options` fold and hides
+  low-level rows; `Engineer` shows everything inline. The choice persists in
+  `localStorage` under `tower-studio.detail.v1`.
+- **Plain-language glossary (Phase 5):** 28 terms (VSWR, DTF, RSL, fade margin,
+  N+1, autonomy, ATS, earth loop, dead load, wind area, torsion, soil bearing,
+  backhaul, XPIC, space diversity, sector, baseband, patch cable, alarm highway,
+  on air, configuration version, DC load, CLI, MO, dBi, dBm, E1, HVAC) rendered as
+  dotted-underline buttons. Tap, hover, or keyboard focus opens a definition
+  popover; `Esc` closes it.
+- **Site files (Phase 2):** Save/load/export the whole site as a versioned JSON
+  file (`kind: "tower-studio/site"`, `version: 1`), with a compatibility-version
+  stamp used for honest restore messaging.
+- **Undo / redo (Phase 2):** 50-step history (`HISTORY_LIMIT`) with keyboard
+  shortcuts, wired to the same normalization pipeline as any other state change.
+- **Autosave (Phase 2):** Debounced (400 ms) `localStorage` persistence under
+  `tower-studio.workspace.v1`, with a restore notice shown on reload.
+- **Confirmation flow (Phase 2):** Destructive actions (start fresh, load a file,
+  restore a version) now ask first instead of discarding work silently.
+- **Responsive pass (Phase 4):** One scrolling panel on phone, `≥ 44 × 44 px` tap
+  targets, font sizes raised above the legibility floor, and camera framing offsets
+  derived from the real drawer/sheet geometry instead of the hard-coded
+  `0.34 / 0.17 / 0.12` frustum shifts.
+- **Offline Three.js fallback (Phase 6):** The r128 CDN tag is pinned with an SRI
+  `integrity` hash; if it fails, a local `vendor/three.min.js` (byte-identical
+  official build, MIT — see `vendor/THREE-LICENSE.txt`) is loaded synchronously.
+- **Modern hero encodings (Phase 6):** `herotower.webp` (394 kB) and
+  `herotower.avif` (224 kB) served through `<picture>`, with the original
+  `herotower.PNG` retained unchanged as the final fallback.
+- **Test suites:** `tests/flow.test.mjs`, `tests/responsive.test.mjs`,
+  `tests/glossary.test.mjs`, `tests/hardening.test.mjs`, and the shared
+  `tests/helpers/headless.mjs` harness (real `matchMedia` evaluation over
+  `innerWidth` / `innerHeight`).
+
+### Changed
+
+- **Effective radio DC load (Phase 1.8):** Radio draw is now the honest
+  effective figure rather than nameplate. Ericsson default: radio load `3` →
+  `3.605` (radio factor `1`, TX factor `1`); rack load `0.560`.
+- **Truthful labels (Phase 1):** Controls now say what they actually do; the CLI
+  and AI surfaces state plainly that the AI is local, rule-based, and has no API
+  key or network access.
+- **HUD updates (Phase 6):** `updateHUD()` diffs and reuses its cell nodes instead
+  of rewriting the bar's `innerHTML` on every frame; only changed label / value /
+  class / id / `data-live` attributes are written.
+- **Rebuild scheduling (Phase 6):** `scheduleRebuild()` is a leading-edge 80 ms
+  throttle (`REBUILD_THROTTLE_MS`), so dragging a slider coalesces many requests
+  into one scene rebuild.
+
+### Removed
+
+- Dead code and unreachable branches identified during the Phase 1 audit.
+
+### Tooling
+
+- `vendor/**` is excluded from ESLint and Prettier (third-party, unmodified).
+- `scripts/build.mjs` now requires and copies `herotower.webp`, `herotower.avif`,
+  `vendor/three.min.js`, and `vendor/THREE-LICENSE.txt`.
+
 ## [1.0.0] - 2026-10-25
 
 ### Added

@@ -93,3 +93,17 @@ Three suites are kept separate on purpose:
   default-state engineering numbers.
 - `tests/vendor-catalogue.test.mjs` — vendor naming honesty and the Phase 1
   truthfulness fixes.
+- `tests/workspace.test.mjs` — autosave, undo/redo, site files, CV restore and
+  confirmations.
+- `tests/flow.test.mjs` — the guided five-step flow: done/attention/locked states,
+  the 4A/4B branch, the gate strip and the visible disabled reasons.
+- `tests/responsive.test.mjs` — phone/tablet/desktop layout contracts.
+- `tests/glossary.test.mjs` — detail levels and the plain-language term popovers.
+- `tests/hardening.test.mjs` — HUD node reuse, the rebuild throttle, the Three.js
+  SRI + offline fallback, the hero encodings and what `scripts/build.mjs` copies.
+
+Every suite shares `tests/helpers/headless.mjs`, which exposes
+`createHeadlessStudio({ width, height })` → `{ studio, document, dom, window }` and
+evaluates `matchMedia` queries for real against `innerWidth` / `innerHeight`
+(a stub that always returns `matches: true` makes every breakpoint true at once
+and hides real bugs).

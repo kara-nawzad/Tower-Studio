@@ -9,8 +9,12 @@ const DIST_DIR = path.join(ROOT_DIR, "dist");
 const REQUIRED_FILES = [
   "index.html",
   "herotower.PNG",
+  "herotower.webp",
+  "herotower.avif",
   "src/styles/main.css",
   "src/js/app.js",
+  "vendor/three.min.js",
+  "vendor/THREE-LICENSE.txt",
   "assets/preview.svg",
 ];
 
@@ -37,7 +41,10 @@ for (const match of indexHtml.matchAll(localAssetPattern)) {
 fs.rmSync(DIST_DIR, { recursive: true, force: true });
 fs.mkdirSync(DIST_DIR, { recursive: true });
 fs.copyFileSync(path.join(ROOT_DIR, "index.html"), path.join(DIST_DIR, "index.html"));
-fs.copyFileSync(path.join(ROOT_DIR, "herotower.PNG"), path.join(DIST_DIR, "herotower.PNG"));
+for (const hero of ["herotower.PNG", "herotower.webp", "herotower.avif"]) {
+  fs.copyFileSync(path.join(ROOT_DIR, hero), path.join(DIST_DIR, hero));
+}
+fs.cpSync(path.join(ROOT_DIR, "vendor"), path.join(DIST_DIR, "vendor"), { recursive: true });
 fs.cpSync(path.join(ROOT_DIR, "src"), path.join(DIST_DIR, "src"), { recursive: true });
 fs.cpSync(path.join(ROOT_DIR, "assets"), path.join(DIST_DIR, "assets"), { recursive: true });
 

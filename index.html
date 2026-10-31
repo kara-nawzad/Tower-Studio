@@ -17,12 +17,21 @@
     <section class="hero-tab" id="hero-tab" aria-label="Telecom Tower Installation Simulator hero">
       <div class="hero-stage" id="hero-stage">
         <div class="hero-artwork" id="hero-artwork">
-          <img
-            class="hero-image"
-            src="./herotower.PNG"
-            alt="Isometric 3D hilltop telecom site with lattice tower, equipment shelter, standby diesel generator, and field maintenance pickup truck"
-            draggable="false"
-          />
+          <!--
+            The same hero artwork in three encodings. Browsers pick AVIF, then
+            WebP, then the original PNG; the PNG at 3.2 MB is now only a
+            fallback for very old browsers.
+          -->
+          <picture>
+            <source srcset="./herotower.avif" type="image/avif" />
+            <source srcset="./herotower.webp" type="image/webp" />
+            <img
+              class="hero-image"
+              src="./herotower.PNG"
+              alt="Isometric 3D hilltop telecom site with lattice tower, equipment shelter, standby diesel generator, and field maintenance pickup truck"
+              draggable="false"
+            />
+          </picture>
           <div class="hero-sunlight" aria-hidden="true"></div>
           <div class="hero-sky-drift" aria-hidden="true"></div>
           <div class="hero-lake-shimmer" aria-hidden="true"></div>
@@ -373,7 +382,26 @@
     <div id="toast" role="status"></div>
     <div id="loading">ASSEMBLING TELECOM SITE…</div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!--
+      Three.js r128 loads from the CDN with a Subresource Integrity hash so a
+      tampered or substituted file cannot run. If the CDN is blocked, or the
+      hash does not match, the identical build is served from ./vendor instead
+      (MIT licensed, see vendor/THREE-LICENSE.txt).
+    -->
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+      integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+      onerror="window.__threeCdnFailed = true"
+    ></script>
+    <script>
+      // Synchronous fallback so app.js still finds window.THREE on the first
+      // run, including when index.html is opened straight off the disk.
+      if (!window.THREE) {
+        document.write('<script src="./vendor/three.min.js"><\/script>');
+      }
+    </script>
     <script src="./src/js/app.js"></script>
   </body>
 </html>
