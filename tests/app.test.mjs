@@ -417,12 +417,23 @@ test("hero tab opens first with left logo/title, living nature layers, inverse 3
   assert.doesNotMatch(brandCard.textContent, /Configure towers, multi-vendor/i);
   assert.doesNotMatch(brandCard.textContent, /Move cursor for 3D depth/i);
 
-  // Living nature layers
+  // Living nature layers — light and water, no weather. The gust streaks, the
+  // swaying grass and the drifting seeds/motes were removed on request, so the
+  // picture is a still photograph that breathes rather than one that blows.
   assert.ok(hero.querySelector(".hero-sunlight"));
   assert.ok(hero.querySelector(".hero-sky-drift"));
   assert.ok(hero.querySelector(".hero-lake-shimmer"));
   assert.ok(hero.querySelector(".hero-beacon-pulse"));
-  assert.equal(hero.querySelectorAll(".hero-mote").length, 14);
+  for (const gone of [
+    ".hero-wind",
+    ".hero-breeze",
+    ".hero-grass",
+    ".hero-blade",
+    ".hero-seed",
+    ".hero-mote",
+  ]) {
+    assert.equal(hero.querySelector(gone), null, `${gone} is gone`);
+  }
 
   // Inverse 3D mouse parallax: right -> left (-X), left -> right (+X), up -> down (+Y), down -> up (-Y)
   studio.updateHeroPointer(1300, 450, true);
