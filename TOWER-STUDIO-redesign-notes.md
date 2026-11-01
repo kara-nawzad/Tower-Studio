@@ -673,7 +673,7 @@ Two changes make that impossible to repeat:
 
 - the dev server now sends `Cache-Control: no-store, no-cache, must-revalidate,
 max-age=0` with `Pragma: no-cache` and `Expires: 0` on every response;
-- `index.html` asks for `main.css?v=20261031e` and `app.js?v=20261031e`, so even
+- `index.html` asks for `main.css?v=20261031f` and `app.js?v=20261031f`, so even
   a proxy that ignores cache headers is looking at a URL it has never seen.
   `scripts/build.mjs` and `tests/polish.test.mjs` strip the query before
   resolving a path, and `tests/app.test.mjs` now requires the version to be
@@ -685,72 +685,51 @@ browser picked the nearest heavier face for all of them.
 
 ---
 
-## 17. Sound: what the site sounds like
+## 17. Two things taken back out: sound, and the weather
 
-The studio had no audio at all after pass 1 (a test even enforced the silence).
-It now has a small synthesised kit: **no audio files, no dependencies, no
-assets** — every effect is built from oscillators and one shared noise buffer at
-the moment it is needed, so the page still ships one HTML file, one stylesheet
-and one script.
+Both of these shipped and were then removed at the owner's request. The record is
+kept because the deletion is as much a design decision as the addition was, and
+because the tests now guard the absence.
 
-### 17.1 The palette
+### 17.1 Sound: added in one round, removed in the next
 
-Sixteen cues, grouped by the thing each one stands for. Peaks are deliberately
-low (the master gain is 0.42) and every effect is shorter than a second, so the
-room never fills with noise.
+The synthesised kit (sixteen cues — clicks, a ratchet for sliders, a contactor for
+breakers, a weld for assembly, a servo for camera moves, a klaxon for alarms, a
+carrier-lock rise for a site going on air) was built from oscillators and one
+noise buffer, with no audio files and no dependencies, and it was opt-out from the
+menu or with **M**.
 
-| Cue       | Where it is heard                                         | How it is made                              |
-| --------- | --------------------------------------------------------- | ------------------------------------------- |
-| `tick`    | card folds, tabs, chrome buttons                          | 28 ms band-passed noise + a 1.2 kHz blip    |
-| `select`  | picking an option, a vendor, a band                       | 620→780 Hz triangle, 70 ms                  |
-| `step`    | entering a master step                                    | 392 → 587 Hz, two notes                     |
-| `confirm` | applying recommended settings, copying                    | C-E-G arpeggio                              |
-| `blocked` | a locked step, a failed launch                            | 150→110 Hz square through a 700 Hz low-pass |
-| `toggle`  | a checkbox, a cabinet door                                | switch click + 180 Hz thump                 |
-| `relay`   | breakers: battery preset, grid source, blackout, failover | 92→48 Hz thump + contactor click            |
-| `ratchet` | dragging any slider                                       | 8 ms detent click, throttled to 55 ms       |
-| `key`     | the CLI console                                           | 8 ms key click, throttled to 30 ms          |
-| `weld`    | assembly, AI build                                        | noise sizzle + three ringing partials       |
-| `servo`   | camera fits and presets                                   | 190→300 Hz saw through a 1.2 kHz low-pass   |
-| `whoosh`  | hero opening, terminal/sheet opening                      | noise swept 380→2600 Hz                     |
-| `sweep`   | a sector sweep starting                                   | 320→1500 Hz out, 1500→320 Hz back           |
-| `alarm`   | alarm and failover tests                                  | three 760/940 Hz square pulses              |
-| `onair`   | the site passes acceptance                                | C-E-G-C rise over a 110 Hz hum              |
-| `toast`   | (available for notifications)                             | two ticks, a fifth apart                    |
+It is gone: the module, the eleven call sites, the menu switch, the M shortcut,
+the help-sheet row, the CSS for the switch, `window.TowerStudio.sound`, and
+`tests/sound.test.mjs`. The studio is silent again, and `tests/polish.test.mjs`
+enforces that — no `AudioContext`, no `playSound`, no `menu-sound`, and no audio
+file referenced anywhere in the markup, script or stylesheet. Nothing else
+changed: every interaction that used to make a sound still does what it did, just
+quietly, which is why the tests that exercise blackout, failover, sweeps and
+launch are the ones covering the removal.
 
-A drawer action names its own cue (`ACTION_SOUNDS`), so a card fold is a click
-while a breaker is a contactor. Sounds whose result is decided further down the
-call chain — a sweep starting, a launch passing acceptance, a step opening —
-play where that result is known, not where the button is.
+### 17.2 The hero's weather
 
-### 17.2 Behaviour you can rely on
+The hero had a "Living Nature" wind system layered over the photograph:
 
-- **Nothing before a gesture.** No `AudioContext` exists until the page has been
-  touched, and the first pointerdown or key press wakes the kit; that same
-  gesture is the first thing you hear. A context that starts suspended (some
-  browsers) is resumed and the sound that would have been late is dropped rather
-  than queued.
-- **One context, no timers.** A single `AudioContext` and a single 1-second noise
-  buffer are reused; every node is scheduled and stopped, nothing loops, nothing
-  drones, and no `setInterval` exists anywhere in the app.
-- **Throttled by name**, so a drag ratchets instead of buzzing and a rebuild
-  cannot machine-gun.
-- **Opt-out and remembered**: menu · _Sound effects_ (a switch, so the menu stays
-  open to show its new state) or the **M** key. The choice is stored in
-  `tower-studio.sound.v1`.
-- **Silent where Web Audio does not exist** — jsdom, very old browsers: `play()`
-  returns `false`, nothing throws, and no test needs an audio device.
-- **The top bar is untouched**: the row lives in the menu, so the one-row bar
-  keeps its five buttons on every laptop. The M key is documented in Shortcuts
-  & help.
+- `.hero-wind` — three soft gust streaks sweeping across the scene;
+- `.hero-grass` / `.hero-blade` — a row of blades along the bottom edge, bending;
+- `.hero-breeze` — drifting seeds and sunlight motes riding the same gusts.
 
-`window.TowerStudio.sound` is additive: `play(name)`, `setEnabled(on)`,
-`toggle()`, `enabled()`, `available()`, `names()`, `volume`. `tests/sound.test.mjs`
-drives the whole palette through a fake-audio device, and checks the two ways a
-synthesiser fails silently: a scheduled time that is not finite, and an
-exponential ramp to zero. It caught a real one — the throttle compared against a
-"never played" sentinel of 0, which swallowed the first long effect of every
-session because the page clock itself starts at zero.
+All three layers are gone, along with `HERO_BLADES`, `HERO_SEEDS`,
+`buildHeroWindLayer()`, the four keyframes (`heroGust`, `heroBladeSway`,
+`heroSeedDrift`, `heroMoteDrift`), the phone override for the grass height and the
+reduced-motion exemptions that only existed for them.
+
+What stays is atmosphere without weather: the drifting cloud shadows
+(`.hero-shade`), the sun wash (`.hero-sunlight`), the slow sky drift, the lake
+swells and glitter (`.hero-water`, `.hero-lake-shimmer`), and the aviation beacon
+pulse. The picture still feels alive; nothing blows across it.
+
+`tests/polish.test.mjs` fails if any of the ten removed class or keyframe names
+comes back into the markup, the script or the stylesheet, and `tests/app.test.mjs`
+asserts the hero's DOM no longer contains a wind, breeze, grass, blade, seed or
+mote element.
 
 ---
 
@@ -788,10 +767,6 @@ session because the page clock itself starts at zero.
 - **"Nothing is removed" is literal**: a closed card is still in the DOM (hidden),
   every `data-action` still renders, and the Engineer level shows the entire
   control surface in one scroll.
-- **Sound is on by default, but quiet** (master gain 0.42, no effect above 0.16
-  peak), off until the first gesture by browser rule, and switchable from the
-  menu or with M. A silent-by-default studio that nobody switches on is not what
-  "add sound effects" means.
 - **The battery presets only map to option pairs the app already had**
   (1×100, 2×150, 4×200 Ah); the default site still loads the Extended bank, so
   no default number moved.

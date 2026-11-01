@@ -95,12 +95,6 @@ export function createHeadlessStudio({
   height = 900,
   guard = false,
   reducedMotion = false,
-  // A stand-in for window.AudioContext. jsdom has no Web Audio at all, which is
-  // the point of one of the sound tests, but the palette needs something that
-  // records the nodes it is asked to build.
-  audioContext = null,
-  // Seed localStorage before the app boots, for the preferences it remembers.
-  storage = null,
 } = {}) {
   const html = fs.readFileSync(path.join(ROOT_DIR, "index.html"), "utf8");
   const appJs = fs.readFileSync(path.join(ROOT_DIR, "src/js/app.js"), "utf8");
@@ -168,11 +162,6 @@ export function createHeadlessStudio({
     setSize() {}
     render() {}
     dispose() {}
-  }
-
-  if (audioContext) window.AudioContext = audioContext;
-  if (storage) {
-    for (const [key, value] of Object.entries(storage)) window.localStorage.setItem(key, value);
   }
 
   window.THREE = { ...THREE, WebGLRenderer: MockWebGLRenderer };

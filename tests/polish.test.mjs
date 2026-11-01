@@ -57,11 +57,53 @@ test("no colour emoji is left in the markup or the drawer strings", () => {
   }
 });
 
-test("sound is synthesised in the app, not shipped as audio files", () => {
-  // Pass 1 removed the Web Audio drone entirely; the studio now has a small
-  // opt-out kit instead (palette and behaviour in tests/sound.test.mjs). What
-  // must stay true is that it is built from oscillators and one noise buffer:
-  // there are no sound assets to download, and no timer keeps anything playing.
+test("the hero has no weather: the wind effect is gone from markup and stylesheet", () => {
+  // The gust streaks, the swaying grass and the drifting seeds/motes were all
+  // one "wind" system. None of it should survive in either place — a leftover
+  // rule is invisible until something else picks the class name up again.
+  for (const token of [
+    "hero-wind",
+    "hero-breeze",
+    "hero-grass",
+    "hero-blade",
+    "hero-seed",
+    "hero-mote",
+    "heroGust",
+    "heroBladeSway",
+    "heroSeedDrift",
+    "heroMoteDrift",
+  ]) {
+    assert.equal(HTML.includes(token), false, `${token} is not in the markup`);
+    assert.equal(JS.includes(token), false, `${token} is not in the script`);
+    assert.equal(CSS.includes(token), false, `${token} is not in the stylesheet`);
+  }
+  // The light and the water stay: this removed weather, not atmosphere.
+  for (const kept of [".hero-sunlight", ".hero-water-swell", ".hero-lake-shimmer", ".hero-shade"]) {
+    assert.ok(CSS.includes(kept), `${kept} is still styled`);
+  }
+  // No animation anywhere in the hero references a removed keyframe.
+  const used = [...CSS.matchAll(/animation:\s*([a-zA-Z]+) /g)].map((m) => m[1]);
+  const defined = new Set([...CSS.matchAll(/@keyframes\s+([a-zA-Z]+)/g)].map((m) => m[1]));
+  for (const name of used) {
+    if (!name.startsWith("hero")) continue;
+    assert.ok(defined.has(name), `@keyframes ${name} still exists`);
+  }
+});
+
+test("the studio is silent: no Web Audio anywhere in the app", () => {
+  for (const token of [
+    "AudioContext",
+    "createOscillator",
+    "createGain",
+    "playSound",
+    "SOUND_RECIPES",
+    "soundForAction",
+    "menu-sound",
+  ]) {
+    assert.ok(!JS.includes(token), `${token} should be gone`);
+    assert.ok(!HTML.includes(token), `${token} should not be in the markup`);
+  }
+  // …and no audio asset is referenced anywhere either.
   const assets = /[\w-]+\.(mp3|wav|ogg|m4a|aac|flac|opus)/i;
   for (const [name, source] of [
     ["index.html", HTML],
@@ -70,19 +112,14 @@ test("sound is synthesised in the app, not shipped as audio files", () => {
   ]) {
     assert.equal(assets.test(source), false, `${name} points at an audio file`);
   }
-  assert.equal((JS.match(/new Ctor\(\)/g) || []).length, 1, "one audio context, created on demand");
-  assert.equal((JS.match(/setInterval\(/g) || []).length, 0, "nothing runs on a timer");
-
-  // …and the rest of the app still runs with the kit in place.
+  // …and it still runs: the power events that used to click and chime are fine.
   const { studio } = createHeadlessStudio({ width: 1440, height: 900 });
   studio.state.onboarding.active = false;
   studio.startBlackout();
   assert.equal(studio.powerSimulation.phase, "BATTERY_BRIDGE");
   studio.restoreGrid();
   assert.equal(studio.powerSimulation.phase, "NORMAL");
-  assert.equal(studio.sound.play("tick"), false, "silent where Web Audio is missing");
 });
-
 test("the drawer renders without a missing helper after the audio removal", () => {
   const { studio, document, dom } = createHeadlessStudio({ width: 1440, height: 900 });
   studio.state.onboarding.active = false;
